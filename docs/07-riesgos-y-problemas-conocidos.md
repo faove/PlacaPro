@@ -21,7 +21,7 @@
 
 | # | Problema | Mitigación |
 |---|----------|-----------|
-| B1 | El sistema tiene **Python 3.8.10**; PySide6 recientes requieren ≥ 3.9 | Usar Python **3.11/3.12** en un `venv` (pyenv o paquete del sistema). Documentar en README. Si no es posible: fijar `PySide6<6.6` compatible con 3.8 (no recomendado, 3.8 está fuera de soporte) |
+| B1 | El sistema tiene **Python 3.8.10**; PySide6 recientes requieren ≥ 3.9 — **resuelto en sprint 0: Python 3.12 vía `uv`** | Usar Python **3.11/3.12** en un `venv` (pyenv o paquete del sistema). Documentar en README. Si no es posible: fijar `PySide6<6.6` compatible con 3.8 (no recomendado, 3.8 está fuera de soporte) |
 | B2 | Dependencias gráficas de Qt en Linux (xcb) | Documentar `libxcb-cursor0` y similares; tests con `QT_QPA_PLATFORM=offscreen` |
 | B3 | Generación PDF | Preferir `QPdfWriter` (sin dependencias); `reportlab` como alternativa si se necesitan tablas complejas |
 | B4 | Ruta de la base de datos y permisos | `~/.placapro/` + variable `PLACAPRO_DB` |

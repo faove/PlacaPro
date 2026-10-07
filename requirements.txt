@@ -1,0 +1,2 @@
+# Dependencias de ejecución de PlacaPro
+PySide6>=6.7,<7
