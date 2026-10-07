@@ -2,26 +2,36 @@
 
 ## 1. Entidades de dominio (`models/`)
 
-Todas son `@dataclass(frozen=True)` salvo las raíces de agregado editables (`Project`, `Furniture`). Dimensiones expuestas en mm (`Decimal`) y convertibles a unidades internas (`int`, décimas de mm).
+Todas son `@dataclass(frozen=True)` salvo las raíces de agregado editables (`Project`, `Furniture`). **Las dimensiones se almacenan en unidades internas** (`int`, décimas de mm); cada entidad ofrece propiedades `*_mm` (`Decimal`) y un constructor `from_mm(...)`. Las entidades solo validan tipos; las reglas de negocio están en `models/validation.py`.
 
 ### Enumeraciones
 ```python
-class GrainDirection(Enum):   # pieza
-    VERTICAL = "vertical"      # veta paralela al ALTO de la pieza
+class GrainDirection(Enum):  # pieza
+    VERTICAL = "vertical"  # veta paralela al ALTO de la pieza
     HORIZONTAL = "horizontal"  # veta paralela al ANCHO de la pieza
-    NONE = "none"              # indiferente
+    NONE = "none"  # indiferente
 
-class PlateGrain(Enum):        # placa
+
+class PlateGrain(Enum):  # placa
     ALONG_HEIGHT = "along_height"  # veta paralela al alto de la placa (habitual: lado largo)
     ALONG_WIDTH = "along_width"
-    NONE = "none"                  # placa lisa/sin veta (melamina blanca)
+    NONE = "none"  # placa lisa/sin veta (melamina blanca)
 
-class PieceCategory(Enum):    # define color en el diagrama
+
+class PieceCategory(Enum):  # define color en el diagrama
     LATERAL, TAPA, BASE, FONDO, PUERTA, DIVISOR, ESTANTE, CAJON, ZOCALO, OTRO
 
-class OptimizationLevel(Enum): FAST, BALANCED, MAX
-class CutMode(Enum): PANEL_SAW, CNC     # escuadradora (guillotina) / CNC (libre)
-class OffcutStatus(Enum): REUSABLE, WASTE, IN_STOCK, CONSUMED
+
+class OptimizationLevel(Enum):
+    FAST, BALANCED, MAX
+
+
+class CutMode(Enum):
+    PANEL_SAW, CNC  # escuadradora (guillotina) / CNC (libre)
+
+
+class OffcutStatus(Enum):
+    REUSABLE, WASTE, IN_STOCK, CONSUMED
 ```
 
 ### Material y placas
@@ -46,18 +56,18 @@ class OffcutStatus(Enum): REUSABLE, WASTE, IN_STOCK, CONSUMED
 ### Parámetros
 ```python
 @dataclass(frozen=True)
-class CuttingParameters:
-    kerf: Decimal = Decimal("3.2")
-    edge_margin: Decimal = Decimal("10")        # refilado por cada borde
-    extra_spacing: Decimal = Decimal("0")       # separación adicional entre piezas
-    allow_rotation: bool = True                 # global; se combina con la pieza
+class CuttingParameters:          # longitudes en dmm (int); áreas en dmm²
+    kerf: int = 32                 # 3,2 mm
+    edge_margin: int = 100         # 10 mm de refilado por cada borde
+    extra_spacing: int = 0         # separación adicional entre piezas
+    allow_rotation: bool = True    # global; se combina con la pieza (la veta manda)
     level: OptimizationLevel = OptimizationLevel.BALANCED
     cut_mode: CutMode = CutMode.PANEL_SAW
     use_stock_first: bool = False
     use_offcuts_first: bool = False
-    min_offcut_width: Decimal = Decimal("150")
-    min_offcut_height: Decimal = Decimal("150")
-    min_offcut_area_m2: Decimal = Decimal("0.05")
+    min_offcut_width: int = 1500   # 150 mm
+    min_offcut_height: int = 1500  # 150 mm
+    min_offcut_area: int = 5_000_000  # 0,05 m²
     seed: int = 42
 ```
 

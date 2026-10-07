@@ -20,11 +20,11 @@ class StandardFormat(NamedTuple):
 
 
 STANDARD_PLATE_FORMATS: tuple[StandardFormat, ...] = (
-    StandardFormat("Melamina 1830 × 2820", Decimal(1830), Decimal(2820), Decimal(18)),
-    StandardFormat("Melamina 2440 × 1220", Decimal(2440), Decimal(1220), Decimal(18)),
-    StandardFormat("Melamina 2750 × 1830", Decimal(2750), Decimal(1830), Decimal(18)),
-    StandardFormat("Melamina 2800 × 2070", Decimal(2800), Decimal(2070), Decimal(18)),
-    StandardFormat("Melamina 3000 × 2100", Decimal(3000), Decimal(2100), Decimal(18)),
+    StandardFormat("Melamina blanca 1830 × 2820", Decimal(1830), Decimal(2820), Decimal(18)),
+    StandardFormat("Melamina blanca 2440 × 1220", Decimal(2440), Decimal(1220), Decimal(18)),
+    StandardFormat("Melamina blanca 2750 × 1830", Decimal(2750), Decimal(1830), Decimal(18)),
+    StandardFormat("Melamina blanca 2800 × 2070", Decimal(2800), Decimal(2070), Decimal(18)),
+    StandardFormat("Melamina blanca 3000 × 2100", Decimal(3000), Decimal(2100), Decimal(18)),
 )
 
 # Parámetros de corte por defecto

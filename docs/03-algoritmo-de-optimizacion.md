@@ -98,12 +98,12 @@ El enunciado propone `placas × 1.000.000 + desperdicio + cortes × penalizació
 
 ```python
 Score = (
-    sheets_used,                    # 1. menos placas
-    -last_sheet_free_concentration, # 2. última placa lo más vacía posible / piezas concentradas en las primeras
+    sheets_used,  # 1. menos placas
+    -last_sheet_free_concentration,  # 2. última placa lo más vacía posible / piezas concentradas en las primeras
     -largest_reusable_offcut_area,  # 3. retazos grandes y aprovechables > muchos pedazos chicos
-    unusable_waste_area,            # 4. desperdicio no aprovechable mínimo
-    cut_count,                      # 5. menos cortes
-    total_cut_length,               # 6. menos metros de corte
+    unusable_waste_area,  # 4. desperdicio no aprovechable mínimo
+    cut_count,  # 5. menos cortes
+    total_cut_length,  # 6. menos metros de corte
 )
 ```
 
