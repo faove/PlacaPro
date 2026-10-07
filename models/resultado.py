@@ -116,6 +116,8 @@ class SheetLayout:
     placements: tuple[Placement, ...] = ()
     offcuts: tuple[Offcut, ...] = ()
     cut_plan: CutPlan | None = None
+    edge_margin: int = 0
+    """Refilado aplicado a esta placa (0 en retazos ya escuadrados)."""
 
     @property
     def total_area(self) -> int:
@@ -154,6 +156,7 @@ class SheetLayout:
             "placements": [p.to_dict() for p in self.placements],
             "offcuts": [o.to_dict() for o in self.offcuts],
             "cut_plan": self.cut_plan.to_dict() if self.cut_plan else None,
+            "edge_margin": self.edge_margin,
         }
 
     @classmethod
@@ -169,6 +172,7 @@ class SheetLayout:
             placements=tuple(Placement.from_dict(p) for p in data.get("placements", ())),
             offcuts=tuple(Offcut.from_dict(o) for o in data.get("offcuts", ())),
             cut_plan=CutPlan.from_dict(data["cut_plan"]) if data.get("cut_plan") else None,
+            edge_margin=data.get("edge_margin", 0),
         )
 
 

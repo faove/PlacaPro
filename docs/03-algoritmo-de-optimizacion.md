@@ -67,8 +67,10 @@ class Packer(Protocol):
 ### 4.3 Tiras / niveles guiados por el taller (opcional, "rápida")
 - Shelf/FFDH por tiras horizontales o verticales: muy fácil de cortar (2 etapas), menos denso. Sirve como baseline y fallback garantizado.
 
-### 4.4 Multi-placa
-- Estrategia *bin-by-bin* (llenar una placa al máximo antes de abrir otra) y *global best fit* (cada pieza va a la placa abierta donde mejor encaja, si no cabe se abre una nueva).
+### 4.4 Multi-placa (modos de colocación)
+- **Secuencial** (*bin-by-bin*): recorre las piezas en orden y llena una placa al máximo antes de abrir la siguiente.
+- **Global**: cada pieza va a la placa abierta donde mejor encaja; si no cabe en ninguna, se abre otra.
+- **Mejor ajuste** (*global best fit* por placa): en cada paso elige la combinación pieza/hueco con mejor puntuación. El orden solo desempata. Reconstruye encajes exactos; es O(n²) por placa, así que se ejecuta una sola vez por estrategia.
 - Orden de bins: retazos en stock → placas de inventario → placas nuevas, cuando el usuario lo pide.
 
 ## 5. Búsqueda (`optimization/optimizer.py`)
@@ -88,9 +90,15 @@ Cada candidato: `verification.verify(layout)` → si falla, se descarta y se reg
 ### Cota inferior
 `LB = ceil(Σ área_inflada / área_útil)`; si un candidato alcanza `LB` placas, en modo rápido/equilibrado se corta la búsqueda de "menos placas" y solo se mejora el score secundario.
 
-## 6. Verificación de guillotinabilidad
+## 6. Descomposición guillotina (`optimization/guillotine.py`)
 
-Recursivo sobre una región: buscar una línea vertical u horizontal que no atraviese ninguna pieza (considerando el kerf como franja de corte) y divida las piezas en dos grupos no vacíos; recursión en ambas mitades. Si alguna región con ≥ 2 piezas no tiene línea ⇒ no guillotinable. Coste O(n² log n), aceptable para n < 500.
+Recursiva sobre una región:
+1. Si el contorno de las piezas no llena la región, se hace un **corte de refilado** que separa la franja vacía más grande (retazo o desperdicio).
+2. Si la región coincide con una sola pieza, es una hoja.
+3. Si no, se buscan **todas las líneas libres** (franjas de ancho kerf que no tocan ninguna pieza) en una orientación y se corta en tiras. Se prefiere la orientación con más tiras y, a igualdad, los cortes más largos.
+4. Si una región con 2 o más piezas no tiene ninguna línea libre, la distribución **no es guillotinable**.
+
+Cualquier línea libre conserva la guillotinabilidad de ambos lados, así que elegir de forma voraz no rechaza distribuciones válidas. El árbol resultante da el número de cortes, los metros de corte y los sobrantes cortables. Es la base del plan de corte del sprint 3. Coste O(n² log n) en el peor caso.
 
 ## 7. Función de puntuación (`optimization/scoring.py`)
 
@@ -106,6 +114,9 @@ Score = (
     total_cut_length,  # 6. menos metros de corte
 )
 ```
+
+**Implementado (sprint 2)** en `optimization/scoring.py`:
+`(piezas sin colocar, placas enteras, −retazos de stock aprovechados, área de la placa menos llena, −sobrante cortable más grande, nº de cortes, longitud de corte)`. El desperdicio no aprovechable se incorporará cuando exista la clasificación de retazos (sprint 3).
 
 Equivalente escalar (para mostrar y comparar con la propuesta del cliente):
 `score = placas × 10^12 + desperdicio_no_aprovechable_dmm² + cortes × P_CORTE` con `P_CORTE` configurable. Se documenta en el README la diferencia y la razón.

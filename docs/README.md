@@ -18,6 +18,7 @@ Esta carpeta contiene el análisis, la arquitectura y la planificación por spri
 | [06-estrategia-de-testing.md](06-estrategia-de-testing.md) | Pirámide de tests, casos obligatorios, propiedades invariantes |
 | [07-riesgos-y-problemas-conocidos.md](07-riesgos-y-problemas-conocidos.md) | Análisis previo de problemas del algoritmo y del entorno |
 | [08-roadmap-futuro.md](08-roadmap-futuro.md) | Generador de muebles, costos, CNC/DXF/SVG, inventario avanzado |
+| [benchmarks.md](benchmarks.md) | Rendimiento y calidad del optimizador (generado por `scripts/benchmark.py`) |
 | [glosario.md](glosario.md) | Términos de taller y técnicos |
 
 ### Sprints
