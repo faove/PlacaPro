@@ -9,9 +9,11 @@ Dado un conjunto de piezas (coordenadas reales) dentro de una región, construye
   (una tira por grupo de piezas).
 * **piece**: hoja que coincide exactamente con una pieza.
 * **empty**: hoja sin piezas (sobrante).
+* **block**: región con varias piezas sin ninguna línea libre (solo con
+  ``allow_blocks``, para el modo CNC); sus hijos son las piezas.
 
 Si alguna región con varias piezas no admite ninguna línea libre, la distribución
-NO es guillotinable y ``decompose`` devuelve ``None``.
+NO es guillotinable y ``decompose`` devuelve ``None`` (salvo con ``allow_blocks``).
 
 Cualquier línea libre preserva la guillotinabilidad de ambos lados, así que la elección
 voraz de cortes no hace fallar a una distribución que sí es guillotinable.
@@ -34,7 +36,7 @@ V = CutOrientation.VERTICAL
 class GNode:
     region: Rect
     kind: str
-    """``"split"``, ``"trim"``, ``"piece"`` o ``"empty"``."""
+    """``"split"``, ``"trim"``, ``"piece"``, ``"empty"`` o ``"block"``."""
     orientation: CutOrientation | None = None
     positions: tuple[int, ...] = ()
     """Inicio de la franja de kerf de cada corte (X si vertical, Y si horizontal)."""
@@ -148,14 +150,16 @@ def _free_lines(
     return positions, groups
 
 
-def _build(rects: Sequence[Rect], idx: list[int], region: Rect, kerf: int) -> GNode | None:
+def _build(
+    rects: Sequence[Rect], idx: list[int], region: Rect, kerf: int, blocks: bool = False
+) -> GNode | None:
     box = _bbox([rects[i] for i in idx])
     if box != region:
         node = _best_trim(region, box, kerf)
         children = []
         for child in node.children:
             if child.kind == "pending":
-                built = _build(rects, idx, child.region, kerf)
+                built = _build(rects, idx, child.region, kerf, blocks)
                 if built is None:
                     return None
                 children.append(built)
@@ -169,7 +173,10 @@ def _build(rects: Sequence[Rect], idx: list[int], region: Rect, kerf: int) -> GN
     v_pos, v_groups = _free_lines(rects, idx, V, kerf)
     h_pos, h_groups = _free_lines(rects, idx, H, kerf)
     if not v_pos and not h_pos:
-        return None
+        if not blocks:
+            return None
+        pieces = tuple(GNode(rects[i], "piece", piece_index=i) for i in sorted(idx))
+        return GNode(region, "block", children=pieces)
     # Más tiras primero; a igualdad, cortes más largos (a lo largo del lado mayor).
     prefer_v = (len(v_pos), region.h >= region.w) >= (len(h_pos), region.w > region.h)
     orientation, positions, groups = (V, v_pos, v_groups) if prefer_v else (H, h_pos, h_groups)
@@ -182,7 +189,7 @@ def _build(rects: Sequence[Rect], idx: list[int], region: Rect, kerf: int) -> GN
             sub = Rect(lo, region.y, hi - lo, region.h)
         else:
             sub = Rect(region.x, lo, region.w, hi - lo)
-        built = _build(rects, group, sub, kerf)
+        built = _build(rects, group, sub, kerf, blocks)
         if built is None:
             return None
         children.append(built)
@@ -190,14 +197,20 @@ def _build(rects: Sequence[Rect], idx: list[int], region: Rect, kerf: int) -> GN
     return GNode(region, "split", orientation, tuple(positions), tuple(children))
 
 
-def decompose(rects: Sequence[Rect], region: Rect, kerf: int) -> Decomposition | None:
-    """Árbol de cortes guillotina o ``None`` si la distribución no es guillotinable."""
+def decompose(
+    rects: Sequence[Rect], region: Rect, kerf: int, *, allow_blocks: bool = False
+) -> Decomposition | None:
+    """Árbol de cortes guillotina o ``None`` si la distribución no es guillotinable.
+
+    Con ``allow_blocks`` nunca devuelve ``None``: las zonas no guillotinables quedan
+    como nodos ``"block"``.
+    """
     if not rects:
         return Decomposition(GNode(region, "empty"))
     needed = 10 * len(rects) + 200
     if sys.getrecursionlimit() < needed:
         sys.setrecursionlimit(needed)
-    root = _build(rects, list(range(len(rects))), region, kerf)
+    root = _build(rects, list(range(len(rects))), region, kerf, allow_blocks)
     return Decomposition(root) if root is not None else None
 
 

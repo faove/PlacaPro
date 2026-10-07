@@ -133,10 +133,20 @@ class SheetLayout:
 
     @property
     def reusable_offcut_area(self) -> int:
-        return sum(o.area for o in self.offcuts if o.status is OffcutStatus.REUSABLE)
+        """Retazos aprovechables (también los ya guardados en stock)."""
+        return sum(
+            o.area
+            for o in self.offcuts
+            if o.status in (OffcutStatus.REUSABLE, OffcutStatus.IN_STOCK)
+        )
+
+    @property
+    def kerf_area(self) -> int:
+        return self.cut_plan.kerf_area if self.cut_plan else 0
 
     @property
     def unusable_waste_area(self) -> int:
+        """Desperdicio no aprovechable: kerf, refilado y sobrantes pequeños."""
         return self.waste_area - self.reusable_offcut_area
 
     @property

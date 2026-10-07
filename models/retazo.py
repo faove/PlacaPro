@@ -33,7 +33,11 @@ class OffcutStatus(Enum):
 
 @dataclass(frozen=True)
 class Offcut:
-    """Retazo. ``x``/``y`` solo tienen sentido dentro del resultado que lo generó."""
+    """Retazo. ``x``/``y`` solo tienen sentido dentro del resultado que lo generó.
+
+    ``label`` identifica el retazo dentro de su resultado (p. ej. ``"R1.2"``: placa 1,
+    retazo 2); no se guarda en el stock.
+    """
 
     width: int
     height: int
@@ -48,6 +52,7 @@ class Offcut:
     needs_trim: bool = False
     created_at: datetime | None = None
     notes: str = ""
+    label: str = ""
     id: int | None = None
 
     def __post_init__(self) -> None:
@@ -78,6 +83,7 @@ class Offcut:
             "needs_trim": self.needs_trim,
             "created_at": dt_to_str(self.created_at),
             "notes": self.notes,
+            "label": self.label,
         }
 
     @classmethod
@@ -96,5 +102,6 @@ class Offcut:
             needs_trim=bool(data.get("needs_trim", False)),
             created_at=dt_from_str(data.get("created_at")),
             notes=data.get("notes", ""),
+            label=data.get("label", ""),
             id=data.get("id"),
         )

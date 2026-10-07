@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import replace
 
 from database.database import Database
-from database.repositories import OffcutRepository, StockRepository
+from database.repositories import OffcutRepository, ResultRepository, StockRepository
 from models.placa import StockPlate
 from models.retazo import Offcut, OffcutStatus
+from utils.units import format_length
 
 
 class InventoryService:
@@ -15,6 +17,7 @@ class InventoryService:
         self.db = db
         self.stock = StockRepository(db)
         self.offcuts = OffcutRepository(db)
+        self.results = ResultRepository(db)
 
     # -- placas enteras
     def list_stock(self) -> list[StockPlate]:
@@ -44,6 +47,45 @@ class InventoryService:
         return self.offcuts.save(
             replace(offcut, id=None, status=OffcutStatus.IN_STOCK, x=None, y=None, sheet_index=None)
         )
+
+    def save_offcuts(self, result_id: int, labels: Iterable[str] | None = None) -> list[Offcut]:
+        """Pasa a stock los retazos reutilizables de un resultado (todos si ``labels`` es
+        ``None``). Los ya guardados se omiten; en el resultado quedan como ``IN_STOCK``
+        con el id del stock, para no guardarlos dos veces.
+        """
+        result = self.results.get(result_id)
+        by_label = {o.label: o for s in result.sheets for o in s.offcuts if o.label}
+        wanted = set(by_label) if labels is None else set(labels)
+        storable = (OffcutStatus.REUSABLE, OffcutStatus.IN_STOCK)
+        for label in sorted(wanted):
+            offcut = by_label.get(label)
+            if offcut is None or offcut.status not in storable:
+                raise ValueError(f"{label} no es un retazo reutilizable del resultado {result_id}")
+
+        stored: list[Offcut] = []
+        sheets = []
+        with self.db.transaction():
+            for sheet in result.sheets:
+                offcuts = []
+                for o in sheet.offcuts:
+                    if o.label in wanted and o.status is OffcutStatus.REUSABLE:
+                        place = (
+                            f"placa {sheet.index + 1}, x = {format_length(o.x or 0)}, "
+                            f"y = {format_length(o.y or 0)}"
+                        )
+                        saved = self.store_offcut(
+                            replace(
+                                o,
+                                source_result_id=result_id,
+                                notes=f"Retazo {o.label} del resultado {result_id} ({place})",
+                            )
+                        )
+                        stored.append(saved)
+                        o = replace(o, status=OffcutStatus.IN_STOCK, id=saved.id)
+                    offcuts.append(o)
+                sheets.append(replace(sheet, offcuts=tuple(offcuts)))
+            self.results.update(replace(result, sheets=tuple(sheets)))
+        return stored
 
     def mark_offcut_consumed(self, offcut_id: int) -> None:
         self.offcuts.set_status(offcut_id, OffcutStatus.CONSUMED)

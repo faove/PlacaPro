@@ -1,7 +1,7 @@
 """Caso de uso «OPTIMIZAR CORTES».
 
 validar → despiece (generador de cada mueble) → expandir cantidades → optimizar →
-verificar invariantes → guardar el resultado.
+verificar invariantes → plan de corte y retazos de cada placa → guardar el resultado.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from models.placa import PlateFormat
 from models.proyecto import Project
 from models.resultado import OptimizationResult
 from models.validation import IssueCode, Severity, ValidationIssue, ValidationReport
+from optimization.cutting import plan_result
 from optimization.optimizer import CancellationToken, OptimizationRequest, Optimizer
 from optimization.scoring import Score
 from optimization.verification import verify_result
@@ -92,6 +93,7 @@ class OptimizationService:
         if violations:
             detail = "; ".join(v.message for v in violations[:5])
             raise OptimizationError(f"El resultado no supera la verificación: {detail}")
+        result = plan_result(result, plate.material_id)
 
         for unplaced in result.unplaced:
             report.issues.append(

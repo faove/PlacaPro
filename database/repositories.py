@@ -456,6 +456,17 @@ class ResultRepository:
         )
         return replace(result, id=cur.lastrowid, created_at=created)
 
+    def update(self, result: OptimizationResult) -> None:
+        """Reescribe el JSON de un resultado guardado (p. ej. retazos pasados a stock)."""
+        if result.id is None:
+            raise ValueError("El resultado no está guardado")
+        cur = self.db.execute(
+            "UPDATE optimization_results SET result_json = ? WHERE id = ?",
+            (json.dumps(result.to_dict()), result.id),
+        )
+        if cur.rowcount == 0:
+            raise NotFoundError(f"Resultado {result.id} no existe")
+
     def _from_row(self, row: sqlite3.Row) -> OptimizationResult:
         result = OptimizationResult.from_dict(json.loads(row["result_json"]))
         return replace(result, id=row["id"], project_id=row["project_id"])

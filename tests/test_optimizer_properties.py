@@ -1,5 +1,6 @@
 """Propiedades que deben cumplirse para CUALQUIER entrada válida (Hypothesis)."""
 
+from dataclasses import replace
 from decimal import Decimal
 
 from hypothesis import HealthCheck, given, settings
@@ -8,9 +9,11 @@ from hypothesis import strategies as st
 from models.parametros import CutMode, CuttingParameters, OptimizationLevel
 from models.pieza import GrainDirection, PieceSpec, expand_pieces
 from models.placa import PlateFormat, PlateGrain
+from optimization.cutting import plan_result
 from optimization.guillotine import decompose
 from optimization.optimizer import OptimizationRequest, Optimizer
 from optimization.verification import verify_result
+from tests.helpers import assert_plan_reconstructs
 from utils.geometry import Rect
 
 PLATES = [(18300, 28200), (24400, 12200), (27500, 18300), (6000, 4000)]
@@ -77,6 +80,24 @@ def test_invariants_hold_for_any_input(specs, params, plate_dims, grain):
             assert d is not None
             for left in d.leftovers:
                 assert all(not left.intersects(r) for r in rects)
+
+
+@settings(max_examples=150, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(
+    specs=pieces_st,
+    params=params_st,
+    plate_dims=st.sampled_from(PLATES),
+    grain=st.sampled_from(list(PlateGrain)),
+)
+def test_panel_saw_plan_reconstructs_every_layout(specs, params, plate_dims, grain):
+    """9. En escuadradora, la secuencia de cortes reconstruye exactamente las piezas, con el
+    kerf restado en cada corte, y piezas + kerf + retazos + desperdicio = área de la placa."""
+    params = replace(params, cut_mode=CutMode.PANEL_SAW)
+    plate = PlateFormat("P", *plate_dims, 180, grain=grain)
+    result = plan_result(Optimizer(OptimizationRequest(expand_pieces(specs), plate, params)).run())
+    for sheet in result.sheets:
+        assert sheet.cut_plan is not None and sheet.cut_plan.mode is CutMode.PANEL_SAW
+        assert_plan_reconstructs(sheet, params)
 
 
 @settings(max_examples=25, deadline=None)

@@ -13,10 +13,11 @@
 | A7 | **Explosión combinatoria** en nivel máximo | UI congelada / tiempos largos | Presupuesto de tiempo, hilo de trabajo, cancelación, cota inferior para cortar búsqueda |
 | A8 | **No determinismo** por `random`/orden de dicts | Resultados distintos y tests frágiles | `random.Random(seed)` inyectado; ordenamientos estables con desempate por id |
 | A9 | **Piezas de distinto espesor/material mezcladas** | Pieza de 15 mm puesta en placa de 18 mm | Validación + agrupación por (material, espesor) |
-| A10 | **Retazos muy finos** contados como reutilizables | Stock lleno de tiras inútiles | Mínimos por ancho, alto y área configurables |
+| A10 | **Retazos muy finos** contados como reutilizables | Stock lleno de tiras inútiles | Mínimos por ancho, alto y área configurables — **resuelto en sprint 3** (`offcuts.classify`) |
 | A11 | **Margen vs retazo de stock**: un retazo ya escuadrado no necesita refilado | Pérdida innecesaria | Flag `needs_trim` por bin |
 | A12 | **Optimalidad**: el usuario puede esperar el óptimo | Desconfianza | Mostrar cota inferior y "óptimo garantizado" solo cuando placas = LB |
 | A13 | **Particiones exactas**: rellenos 100 % que exigen repartir piezas en grupos de suma exacta | Puede usar 1 placa más que el óptimo | Documentado como `xfail`; mejora futura: búsqueda exacta acotada sobre tiras (roadmap) |
+| A14 | **Separación extra menor que el kerf** | El corte que separa la holgura solapa el kerf del corte anterior y quita menos material del nominal | El plan registra el kerf efectivo de cada corte (`Cut.kerf`), así que el cuadre de áreas sigue exacto. Queda un corte de repaso con tope 0 — **detectado por el test de propiedades del sprint 3** |
 
 ## B. Entorno y tecnología
 
@@ -33,4 +34,4 @@
 |---|--------|-----------|
 | C1 | Alcance enorme para una v1 | Sprints con entregable funcional en cada uno; lo "preparado" son interfaces + tablas, sin UI |
 | C2 | Interfaz compleja para un usuario de taller | Flujo lineal de 9 pasos, demo precargada, validaciones en línea |
-| C3 | Discrepancia taller ↔ software (medidas de tope) | Secuencia de cortes con "medida a ajustar en el tope" y prueba con un caso real cortado |
+| C3 | Discrepancia taller ↔ software (medidas de tope) | Secuencia de cortes con "medida a ajustar en el tope" y prueba con un caso real cortado. El sprint 3 la valida con un simulador; **falta la prueba en taller** |

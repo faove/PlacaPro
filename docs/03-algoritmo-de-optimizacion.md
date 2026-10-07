@@ -116,7 +116,7 @@ Score = (
 ```
 
 **Implementado (sprint 2)** en `optimization/scoring.py`:
-`(piezas sin colocar, placas enteras, −retazos de stock aprovechados, área de la placa menos llena, −sobrante cortable más grande, nº de cortes, longitud de corte)`. El desperdicio no aprovechable se incorporará cuando exista la clasificación de retazos (sprint 3).
+`(piezas sin colocar, placas enteras, −retazos de stock aprovechados, área de la placa menos llena, −sobrante cortable más grande, nº de cortes, longitud de corte)`. **Desperdicio no aprovechable (sprint 3)**: se probó como criterio entre «sobrante más grande» y «nº de cortes» y se descartó. Con las placas fijas equivale a «más área de retazos reutilizables», que ya está casi cubierto por el sobrante más grande. Además cambiaba el rumbo de la búsqueda local y empeoraba un caso de relleno perfecto (4 placas en vez de 3). Se informa por placa (`SheetLayout.unusable_waste_area`) pero no se puntúa.
 
 Equivalente escalar (para mostrar y comparar con la propuesta del cliente):
 `score = placas × 10^12 + desperdicio_no_aprovechable_dmm² + cortes × P_CORTE` con `P_CORTE` configurable. Se documenta en el README la diferencia y la razón.

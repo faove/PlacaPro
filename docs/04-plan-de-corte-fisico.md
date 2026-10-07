@@ -73,19 +73,29 @@ CORTE 6  [nivel 2]    vertical    x = 410     longitud  600 mm   → Lateral 1 (
 Cada `Cut` incluye: orden, nivel, orientación, posición absoluta, longitud, **medida a ajustar en el tope** (distancia desde el borde de referencia de la región), piezas resultantes.
 
 ### 4.4 Métricas
-`cut_count`, `total_cut_length_m`, cortes por nivel. Se usan en el scoring y en el informe.
+`cut_count`, `total_cut_length`, `cuts_by_level`, `kerf_area` (en `CutPlan`). El optimizador puntúa con el número y la longitud de cortes del mismo árbol (sin el refilado, que es igual en toda placa entera).
 
 ### 4.5 Modo CNC
 Si el layout no es guillotinable (solo permitido en `CutMode.CNC`), no se genera secuencia de escuadradora; se genera la lista de contornos por pieza (base para G-code/DXF futuros).
 
+### 4.6 Implementación (sprint 3)
+- **Pasadas y niveles.** Los cortes paralelos de una misma región se agrupan en una pasada, aunque en el árbol de `guillotine.py` vengan anidados (p. ej. tiras + recorte de un sobrante del mismo lado). Cada cambio de orientación es un nivel más. El refilado es el nivel 0.
+- **Refilado**: izquierda, derecha, arriba, abajo. El kerf cae dentro del margen: el corte izquierdo está en `x = margen − kerf`. Si el margen es más estrecho que el kerf, el corte se lleva solo el margen (`Cut.kerf` < kerf nominal).
+- **Medida de tope** = distancia desde el borde actual de la región hasta el corte, es decir, el ancho de la franja que separa. Tras refilar un borde, el tope del opuesto es la medida útil (p. ej. 1810 mm).
+- **Orden**: por niveles. Dentro de una región, de menor a mayor coordenada. Entre regiones del mismo nivel, primero la que tiene más piezas.
+- **Nombres**: «Tira A, B…» en el nivel 1 y «Tira A.1, A.2…» dentro de ellas, por posición. Los retazos reutilizables se numeran `R<placa>.<n>`, el mayor primero.
+- **Cada corte libera** la franja anterior; el último de la pasada, también la siguiente.
+- **Partición exacta**: piezas + kerf + retazos + desperdicio (incluido el refilado) = área de la placa, en enteros. Lo comprueba un simulador de taller independiente que aplica los cortes uno a uno (`tests/helpers.py::simulate_cuts`).
+- **CNC no guillotinable**: el árbol marca la zona sin líneas libres como bloque. Se informan los contornos de las piezas y los retazos de la parte que sí es separable. En ese caso no se calcula el kerf, así que el cuadre exacto de áreas solo se garantiza en escuadradora.
+
 ## 5. Retazos (`optimization/offcuts.py`)
 
 1. Tras construir el árbol, las **hojas vacías** son sobrantes rectangulares (exactamente cortables, ya descontado el kerf).
-2. Fusionar sobrantes adyacentes que formen un rectángulo cortable con un solo corte menos.
+2. Fusionar sobrantes adyacentes que formen un rectángulo cortable con un solo corte menos. Se prueba primero la fusión que da el rectángulo mayor. Se acepta si la placa, tratando los sobrantes como piezas, sigue siendo guillotinable sin más cortes.
 3. Clasificar:
-   - `REUSABLE` si `ancho ≥ min_offcut_width` **y** `alto ≥ min_offcut_height` **y** área ≥ `min_offcut_area_m2`.
+   - `REUSABLE` si `ancho ≥ min_offcut_width` **y** `alto ≥ min_offcut_height` **y** área ≥ `min_offcut_area_m2`. Ancho y alto se aceptan en cualquier orientación, porque el retazo se puede girar al guardarlo.
    - `WASTE` en caso contrario (incluye kerf y refilado).
-4. La UI ofrece "Guardar retazos en stock" → `OffcutRepository` con estado `IN_STOCK`. Al usarlos en otra optimización pasan a `CONSUMED`.
+4. La UI ofrece "Guardar retazos en stock" → `InventoryService.save_offcuts(result_id, labels)` → `OffcutRepository` con estado `IN_STOCK`. En el resultado guardado el retazo queda como `IN_STOCK` con el id del stock, así que no se puede guardar dos veces. Al usarlos en otra optimización pasan a `CONSUMED`.
 5. Los retazos en stock se usan como bins (sin refilado si ya están escuadrados; parámetro por retazo).
 
 ## 6. Hoja de taller (resumen para el operario)
