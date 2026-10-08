@@ -71,3 +71,28 @@ def test_stock_and_offcuts_first(db):
     assert SheetSource.NEW not in sources
     offcut_sheet = next(s for s in result.sheets if s.source is SheetSource.OFFCUT)
     assert offcut_sheet.thickness == 180
+
+
+def test_compute_runs_in_another_thread_without_the_database(db):
+    """La UI ejecuta ``compute`` en un hilo de trabajo: no debe tocar la conexión SQLite
+    (sqlite3 la rechaza fuera del hilo que la creó)."""
+    import threading
+
+    from services.optimization_service import OptimizationOutcome, PreparedOptimization
+
+    project = demo(db)
+    service = OptimizationService(db)
+    prepared = service.prepare(project)
+    assert isinstance(prepared, PreparedOptimization)
+
+    box = {}
+    thread = threading.Thread(target=lambda: box.update(result=service.compute(prepared)))
+    thread.start()
+    thread.join()
+    outcome = service.finish(prepared, box["result"])
+    assert outcome.ok and outcome.result.id is not None
+    assert outcome.result.project_id == project.id
+
+    project.furniture[0].pieces.clear()
+    invalid = service.prepare(project)
+    assert isinstance(invalid, OptimizationOutcome) and not invalid.ok

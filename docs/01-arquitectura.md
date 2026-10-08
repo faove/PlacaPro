@@ -114,6 +114,7 @@ PlacaPro/
 ## 4. Flujo de una optimización
 
 1. UI recoge proyecto, placa(s), parámetros → `OptimizationService.optimize(project_id, params)`.
+   En la UI el caso de uso se parte en `prepare` (pasos 2–4, hilo principal), `compute` (5–7, hilo de trabajo, sin DB) y `finish` (8, hilo principal).
 2. Servicio: carga entidades, **valida** (`validation.py`) → si hay errores bloqueantes, devuelve `ValidationReport` sin optimizar.
 3. Expande `PieceSpec` → `PieceInstance` (cantidad → instancias numeradas).
 4. Construye `Bins` disponibles: retazos en stock (si se pidió), placas de inventario, y placas "nuevas" del formato elegido (ilimitadas).
