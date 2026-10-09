@@ -9,6 +9,8 @@ Para la UI el caso de uso se parte en tres pasos: ``prepare`` y ``finish`` usan 
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
@@ -50,6 +52,7 @@ class PreparedOptimization:
     plate: PlateFormat
     request: OptimizationRequest
     project_id: int | None
+    fingerprint: str = ""
 
 
 class OptimizationService:
@@ -93,7 +96,44 @@ class OptimizationService:
         if report.has_errors:
             return OptimizationOutcome(report)
         plate = self.plates.get(project.plate_format_id)  # type: ignore[arg-type]
-        return PreparedOptimization(report, plate, self.build_request(project, plate), project.id)
+        return PreparedOptimization(
+            report,
+            plate,
+            self.build_request(project, plate),
+            project.id,
+            self.input_fingerprint(project, plate),
+        )
+
+    def input_fingerprint(self, project: Project, plate: PlateFormat) -> str:
+        """Huella de lo que determina el resultado: placa, parámetros y despiece.
+
+        No incluye nombres del proyecto/mueble ni el stock disponible: cambiar el
+        inventario no invalida un resultado ya calculado.
+        """
+        specs = []
+        for spec in self.piece_specs(project, plate):
+            data = spec.to_dict()
+            data.pop("id", None)
+            specs.append(data)
+        payload = {
+            "plate": [plate.width, plate.height, plate.thickness, plate.grain.value],
+            "material_id": plate.material_id,
+            "params": project.params.to_dict(),
+            "pieces": specs,
+        }
+        text = json.dumps(payload, sort_keys=True, default=str)
+        return hashlib.sha256(text.encode()).hexdigest()
+
+    def is_result_current(self, project: Project, result: OptimizationResult) -> bool:
+        """True si ``result`` se calculó con los datos actuales del proyecto."""
+        if not result.input_fingerprint or project.plate_format_id is None:
+            return False
+        try:
+            plate = self.plates.get(project.plate_format_id)
+            fingerprint = self.input_fingerprint(project, plate)
+        except (LookupError, ValueError):
+            return False
+        return fingerprint == result.input_fingerprint
 
     @staticmethod
     def compute(
@@ -120,6 +160,7 @@ class OptimizationService:
     ) -> OptimizationOutcome:
         """Añade los avisos de piezas no ubicadas y guarda el resultado (hilo principal)."""
         report = ValidationReport(list(prepared.report.issues))
+        result = replace(result, input_fingerprint=prepared.fingerprint)
         for unplaced in result.unplaced:
             report.issues.append(
                 ValidationIssue(IssueCode.UNPLACEABLE_PIECE, Severity.WARNING, unplaced.reason)

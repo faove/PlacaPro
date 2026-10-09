@@ -7,6 +7,7 @@ avisan con señales. Ver docs/05-interfaz-de-usuario.md.
 from __future__ import annotations
 
 import logging
+from html import escape
 
 from PySide6.QtCore import QSettings, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QTabWidget,
     QToolBox,
     QVBoxLayout,
     QWidget,
@@ -32,6 +34,8 @@ from models.resultado import OptimizationResult
 from models.validation import IssueCode, ValidationFailed, ValidationIssue
 from services.app_services import AppServices
 from services.optimization_service import OptimizationOutcome, PreparedOptimization
+from ui.cut_list_widget import CutListWidget
+from ui.cutting_diagram_widget import CuttingDiagramWidget
 from ui.open_project_dialog import OpenProjectDialog
 from ui.parameters_widget import ParametersWidget
 from ui.pieces_widget import PiecesWidget
@@ -53,6 +57,7 @@ VALIDATION_DELAY_MS = 250
 KEY_GEOMETRY = "window/geometry"
 KEY_STATE = "window/state"
 KEY_SPLITTER = "window/splitter"
+KEY_CENTER_SPLITTER = "window/center_splitter"
 KEY_UNIT = "view/unit"
 KEY_LAST_PROJECT = "project/last_id"
 
@@ -140,26 +145,30 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.optimize_button)
         left_layout.addLayout(progress_row)
 
-        self.diagram_placeholder = QLabel("El diagrama de las placas se mostrará aquí.")
-        self.diagram_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.diagram_placeholder.setMinimumHeight(200)
+        self.diagram_widget = CuttingDiagramWidget(self.units)
+        # Pestañas inferiores: Lista de cortes, Secuencia y Mensajes de validación.
+        self.cut_list_widget = CutListWidget(self.units)
+        self.bottom_tabs: QTabWidget = self.cut_list_widget
         self.validation_panel = ValidationPanel()
-        center = QSplitter(Qt.Orientation.Vertical)
-        center.addWidget(self.diagram_placeholder)
-        center.addWidget(self.validation_panel)
-        center.setStretchFactor(0, 3)
-        center.setStretchFactor(1, 1)
+        self.messages_tab = self.bottom_tabs.addTab(self.validation_panel, "Mensajes")
+        self.center_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.center_splitter.addWidget(self.diagram_widget)
+        self.center_splitter.addWidget(self.bottom_tabs)
+        self.center_splitter.setStretchFactor(0, 3)
+        self.center_splitter.setStretchFactor(1, 1)
+        self.center_splitter.setSizes([520, 220])
 
         self.result_widget = ResultWidget(self.units)
+        self.result: OptimizationResult | None = None
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(left)
-        self.splitter.addWidget(center)
+        self.splitter.addWidget(self.center_splitter)
         self.splitter.addWidget(self.result_widget)
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setStretchFactor(2, 0)
-        self.splitter.setSizes([560, 440, 280])
+        self.splitter.setSizes([480, 640, 340])
         self.setCentralWidget(self.splitter)
 
         self.status_project = QLabel()
@@ -169,7 +178,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.status_project)
         bar.addWidget(self.status_plate)
         bar.addWidget(self.status_message, 1)
-        self.resize(1280, 800)
+        self.resize(1440, 860)
 
     def _build_menus(self) -> None:
         file_menu = self.menuBar().addMenu("&Archivo")
@@ -220,6 +229,11 @@ class MainWindow(QMainWindow):
         self.plate_widget.plates_changed.connect(self._refresh_context)
         self.parameters_widget.changed.connect(self._on_params_changed)
         self.validation_panel.issue_activated.connect(self.focus_issue)
+        self.diagram_widget.piece_selected.connect(self.cut_list_widget.select_piece)
+        self.diagram_widget.cut_selected.connect(self.cut_list_widget.select_cut)
+        self.cut_list_widget.piece_selected.connect(self.diagram_widget.select_piece)
+        self.cut_list_widget.cut_selected.connect(self.diagram_widget.select_cut)
+        self.result_widget.sheet_activated.connect(self.diagram_widget.show_sheet)
         self.optimize_button.clicked.connect(self.optimize)
         self.cancel_button.clicked.connect(self.cancel_optimization)
 
@@ -234,11 +248,15 @@ class MainWindow(QMainWindow):
         splitter = self.settings.value(KEY_SPLITTER)
         if splitter is not None:
             self.splitter.restoreState(splitter)
+        center = self.settings.value(KEY_CENTER_SPLITTER)
+        if center is not None:
+            self.center_splitter.restoreState(center)
 
     def save_settings(self) -> None:
         self.settings.setValue(KEY_GEOMETRY, self.saveGeometry())
         self.settings.setValue(KEY_STATE, self.saveState())
         self.settings.setValue(KEY_SPLITTER, self.splitter.saveState())
+        self.settings.setValue(KEY_CENTER_SPLITTER, self.center_splitter.saveState())
         self.settings.setValue(KEY_UNIT, self.units.symbol)
         if self.project.id is not None:
             self.settings.setValue(KEY_LAST_PROJECT, self.project.id)
@@ -276,7 +294,7 @@ class MainWindow(QMainWindow):
         self.plate_widget.set_selected_plate(project.plate_format_id)
         self.parameters_widget.set_params(project.params)
         self._refresh_context()
-        self.result_widget.set_result(result)
+        self.show_result(result)
         self.status_message.setText("")
         self.set_dirty(False)
         self.run_validation()
@@ -428,7 +446,39 @@ class MainWindow(QMainWindow):
 
     def run_validation(self) -> None:
         self._validation_timer.stop()
-        self.validation_panel.set_issues(self.services.projects.validate(self.project).issues)
+        self.set_issues(self.services.projects.validate(self.project).issues)
+        self.update_stale()
+
+    def set_issues(self, issues: list[ValidationIssue]) -> None:
+        self.validation_panel.set_issues(issues)
+        title = f"Mensajes ({len(issues)})" if issues else "Mensajes"
+        self.bottom_tabs.setTabText(self.messages_tab, title)
+
+    # ------------------------------------------------------------------ resultado
+    def show_result(self, result: OptimizationResult | None) -> None:
+        """Muestra un resultado en el diagrama, las listas y el resumen."""
+        self.result = result
+        self.result_widget.set_result(result)
+        self.diagram_widget.set_result(result)
+        self.cut_list_widget.set_result(result)
+        self.update_stale()
+
+    def show_message(self, html: str) -> None:
+        """Sustituye el resultado por un mensaje (errores, cancelación…)."""
+        self.show_result(None)
+        self.result_widget.set_message(html)
+
+    @property
+    def result_is_stale(self) -> bool:
+        return self.result is not None and not self.services.optimization.is_result_current(
+            self.project, self.result
+        )
+
+    def update_stale(self) -> None:
+        """Banner «Resultado desactualizado» si los datos cambiaron desde el cálculo."""
+        stale = self.result_is_stale
+        self.result_widget.set_stale(stale)
+        self.diagram_widget.set_stale(stale)
 
     def focus_issue(self, issue: ValidationIssue) -> None:
         """Lleva al usuario al campo señalado por un mensaje de validación."""
@@ -463,10 +513,10 @@ class MainWindow(QMainWindow):
         self.run_validation()
         prepared = self.services.optimization.prepare(self.project)
         if isinstance(prepared, OptimizationOutcome):
-            self.validation_panel.set_issues(prepared.report.issues)
-            self.result_widget.set_message(
-                "<h3>RESULTADO</h3><p>Corrija los errores de la lista de validación antes "
-                "de optimizar.</p>"
+            self.set_issues(prepared.report.issues)
+            self.bottom_tabs.setCurrentIndex(self.messages_tab)
+            self.show_message(
+                "Corrija los errores de la lista de <b>Mensajes</b> antes de optimizar."
             )
             self.status_message.setText("Hay errores de validación")
             return False
@@ -509,8 +559,10 @@ class MainWindow(QMainWindow):
         assert prepared is not None
         outcome = self.services.optimization.finish(prepared, result)
         assert outcome.result is not None
-        self.result_widget.set_result(outcome.result)
-        self.validation_panel.set_issues(outcome.report.issues)
+        self.show_result(outcome.result)
+        self.set_issues(outcome.report.issues)
+        if outcome.result.unplaced:
+            self.bottom_tabs.setCurrentIndex(self.messages_tab)
         r = outcome.result
         sheets = f"{r.sheets_count} placa{'' if r.sheets_count == 1 else 's'}"
         utilization = f"{r.utilization * 100:.1f} %".replace(".", ",")
@@ -519,15 +571,15 @@ class MainWindow(QMainWindow):
 
     def _on_failed(self, message: str) -> None:
         self._end_run()
-        self.result_widget.set_message(
-            "<h3>RESULTADO</h3><p><b>La optimización falló por un error interno.</b></p>"
-            f"<p>{message}</p><p>El detalle quedó registrado en el log.</p>"
+        self.show_message(
+            "<p><b>La optimización falló por un error interno.</b></p>"
+            f"<p>{escape(message)}</p><p>El detalle quedó registrado en el log.</p>"
         )
         self.status_message.setText("La optimización falló")
 
     def _on_cancelled(self) -> None:
         self._end_run()
-        self.result_widget.set_message("<h3>RESULTADO</h3><p>Optimización cancelada.</p>")
+        self.show_message("Optimización cancelada.")
         self.status_message.setText("Optimización cancelada")
 
     # ------------------------------------------------------------------ cierre

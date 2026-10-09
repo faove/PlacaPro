@@ -71,7 +71,7 @@ def test_optimize_emits_finished_with_result(window, qtbot):
     assert outcome.ok and outcome.result.pieces_count == 7
     assert outcome.result.id is not None  # proyecto guardado ⇒ resultado persistido
     assert not window.is_optimizing and window.optimize_button.isEnabled()
-    assert "Aprovechamiento" in window.result_widget.toPlainText()
+    assert window.result_widget.kpi_values()["Aprovechamiento"].endswith("%")
     assert window.services.optimization.latest_result(window.project.id).id == outcome.result.id
 
 
@@ -83,7 +83,7 @@ def test_validation_errors_block_and_issue_focuses_cell(window, qtbot):
     issues = window.validation_panel.issues
     issue = next(i for i in issues if i.code is IssueCode.PIECE_LARGER_THAN_PLATE)
     assert issue.location == (0, 1)
-    assert "Corrija" in window.result_widget.toPlainText()
+    assert "Corrija" in window.result_widget.message_text()
 
     window.toolbox.setCurrentIndex(0)
     window.validation_panel.list.itemClicked.emit(window.validation_panel.list.item(0))
@@ -226,3 +226,93 @@ def test_settings_persist_last_project(qtbot, settings, tmp_path):
     assert again.project.id == other_id and again.units.unit is Unit.M
     again.close()
     db.close()
+
+
+def optimize_and_wait(window, qtbot):
+    with qtbot.waitSignal(window.optimization_finished, timeout=30_000) as blocker:
+        assert window.optimize()
+    return blocker.args[0].result
+
+
+def test_optimize_fills_diagram_and_cut_list(window, qtbot):
+    result = optimize_and_wait(window, qtbot)
+    diagram = window.diagram_widget
+    assert diagram.tabs.count() == result.sheets_count
+    assert sum(len(s.piece_items) for s in diagram.scenes) == result.pieces_count
+    assert window.cut_list_widget.piece_model.rowCount() == result.pieces_count
+    assert window.result_widget.kpi_values()["Nº de piezas"] == str(result.pieces_count)
+    assert not window.diagram_widget.stale_banner.isVisible()
+
+
+def test_selection_is_synchronized(window, qtbot):
+    result = optimize_and_wait(window, qtbot)
+    sheet = result.sheets[0]
+    cut_list = window.cut_list_widget
+
+    # Diagrama → tabla.
+    scene = window.diagram_widget.scenes[0]
+    scene.clearSelection()
+    scene.piece_items[2].setSelected(True)
+    row = cut_list.piece_table.selectionModel().selectedRows()[0]
+    selected = cut_list.piece_model.rows[cut_list.piece_proxy.mapToSource(row).row()]
+    assert (selected.sheet_index, selected.placement_index) == (sheet.index, 2)
+
+    # Tabla → diagrama.
+    r = cut_list.piece_model.row_of(sheet.index, 4)
+    cut_list.piece_table.selectRow(
+        cut_list.piece_proxy.mapFromSource(cut_list.piece_model.index(r, 0)).row()
+    )
+    assert window.diagram_widget.selected_piece() == (sheet.index, 4)
+
+    # Secuencia → corte resaltado en el diagrama (capa activada).
+    order = sheet.cut_plan.cuts[-1].order
+    r = cut_list.sequence_model.row_of(sheet.index, order)
+    cut_list.setCurrentIndex(1)
+    cut_list.sequence_table.selectRow(
+        cut_list.sequence_proxy.mapFromSource(cut_list.sequence_model.index(r, 0)).row()
+    )
+    assert window.diagram_widget.cuts_check.isChecked()
+    assert window.diagram_widget.scenes[0].cut_items[order].isSelected()
+
+
+def test_reopen_shows_last_result_and_stale_banner(window, qtbot):
+    result = optimize_and_wait(window, qtbot)
+    project_id = window.project.id
+    assert window.new_project()
+    assert window.diagram_widget.tabs.count() == 0
+
+    assert window.open_project(project_id)
+    assert window.result is not None and window.result.id == result.id
+    assert window.diagram_widget.tabs.count() == result.sheets_count
+    assert not window.result_is_stale and not window.result_widget.stale_banner.isVisible()
+
+    # Cambiar una medida deja el resultado desactualizado; volver atrás lo restablece.
+    model = window.pieces_widget.model
+    original = piece_index(window, 0, Column.WIDTH).data()
+    model.setData(piece_index(window, 0, Column.WIDTH), "410", EDIT)
+    window.run_validation()
+    assert window.result_is_stale
+    assert window.result_widget.stale_banner.isVisible()
+    assert window.diagram_widget.stale_banner.isVisible()
+    model.setData(piece_index(window, 0, Column.WIDTH), original, EDIT)
+    window.run_validation()
+    assert not window.result_is_stale and not window.diagram_widget.stale_banner.isVisible()
+
+    # Renombrar el proyecto no invalida el resultado; cambiar el kerf sí.
+    window.project.name = "Otro nombre"
+    assert not window.result_is_stale
+    window.parameters_widget.edits["kerf"].setText("4")
+    window.parameters_widget.edits["kerf"].editingFinished.emit()
+    window.run_validation()
+    assert window.result_is_stale
+    # Al guardar y reabrir con datos cambiados, el banner sigue.
+    assert window.save()
+    assert window.open_project(project_id)
+    assert window.result_is_stale and window.result_widget.stale_banner.isVisible()
+
+
+def test_validation_error_switches_to_messages_tab(window):
+    window.pieces_widget.model.setData(piece_index(window, 1, Column.WIDTH), "5000", EDIT)
+    assert not window.optimize()
+    assert window.bottom_tabs.currentIndex() == window.messages_tab
+    assert window.bottom_tabs.tabText(window.messages_tab).startswith("Mensajes (")

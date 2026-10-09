@@ -197,6 +197,9 @@ class OptimizationResult:
     duration_ms: int = 0
     project_id: int | None = None
     created_at: datetime | None = None
+    input_fingerprint: str = ""
+    """Huella de los datos de entrada (placa, parámetros, despiece); permite saber si el
+    resultado guardado sigue correspondiendo al proyecto. Ver ``OptimizationService``."""
     id: int | None = None
 
     @property
@@ -247,6 +250,7 @@ class OptimizationResult:
             "score": list(self.score),
             "lower_bound": self.lower_bound,
             "duration_ms": self.duration_ms,
+            "input_fingerprint": self.input_fingerprint,
         }
 
     @classmethod
@@ -261,5 +265,6 @@ class OptimizationResult:
             duration_ms=data.get("duration_ms", 0),
             project_id=data.get("project_id"),
             created_at=dt_from_str(data.get("created_at")),
+            input_fingerprint=data.get("input_fingerprint", ""),
             id=data.get("id"),
         )

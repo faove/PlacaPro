@@ -28,6 +28,13 @@ ERROR_COLOR = "#D9534F"
 ERROR_BACKGROUND = "#FDECEA"
 WARNING_COLOR = "#F39C12"
 PRIMARY_COLOR = "#2B6CB0"
+PLATE_COLOR = "#F5F1E8"
+PLATE_BORDER_COLOR = "#424242"
+MARGIN_COLOR = "#9E9E9E"
+CUT_LINE_COLOR = "#C62828"
+SELECTION_COLOR = "#1A237E"
+DIMENSION_COLOR = "#455A64"
+STALE_BACKGROUND = "#FFF4E5"
 
 
 def category_color(category: PieceCategory) -> QColor:
@@ -98,6 +105,32 @@ QPushButton#optimizeButton:disabled {{
 QLabel#sectionTitle {{
     font-weight: bold;
     font-size: 13px;
+}}
+QFrame#kpiCard {{
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+}}
+QLabel#kpiValue {{
+    font-size: 16px;
+    font-weight: bold;
+}}
+QLabel#kpiTitle {{
+    color: palette(dark);
+    font-size: 11px;
+}}
+QLabel#staleBanner {{
+    background: {STALE_BACKGROUND};
+    color: #8A4B00;
+    border: 1px solid {WARNING_COLOR};
+    border-radius: 4px;
+    padding: 6px;
+}}
+QLabel#unplacedBanner {{
+    background: {ERROR_BACKGROUND};
+    color: {ERROR_COLOR};
+    border: 1px solid {ERROR_COLOR};
+    border-radius: 4px;
+    padding: 6px;
 }}
 """
 

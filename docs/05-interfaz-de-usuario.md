@@ -53,6 +53,7 @@ Splitters redimensionables; estado de la ventana guardado con `QSettings`.
 - Líneas de corte (opcional, toggle): numeradas según la secuencia.
 - Cotas en bordes (opcional).
 - Eje Y: origen arriba-izquierda (convención de taller y de Qt). Se documenta en la leyenda.
+- Escala: 1 unidad de escena = 1 unidad interna (0,1 mm), para que los rectángulos coincidan exactamente con los enteros del modelo.
 
 **Regla de oro**: el diagrama se dibuja **solo** a partir de `Placement` reales; no hay rectángulos decorativos.
 
