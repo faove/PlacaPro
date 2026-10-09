@@ -1,7 +1,10 @@
 """Tests de humo de la ventana principal (pytest-qt, offscreen) contra SQLite en memoria."""
 
+from dataclasses import replace
+
 import pytest
 from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QMessageBox
 
 from app import create_main_window
@@ -26,7 +29,7 @@ def settings(tmp_path):
 @pytest.fixture
 def window(qtbot, settings):
     db = Database(":memory:")
-    win = create_main_window(db, settings, time_budget_s=2)
+    win = create_main_window(db, settings, time_budget_s=2, optimize_demo=False)
     # Sin qtbot.addWidget: qtbot cerraría la ventana antes de este teardown y el aviso
     # de cambios sin guardar (modal) bloquearía el test.
     win.show()
@@ -213,7 +216,7 @@ def test_furniture_management(window):
 
 def test_settings_persist_last_project(qtbot, settings, tmp_path):
     db = Database(tmp_path / "p.db")
-    win = create_main_window(db, settings)
+    win = create_main_window(db, settings, optimize_demo=False)
     qtbot.addWidget(win)
     win.save_as("Otro")
     other_id = win.project.id
@@ -415,3 +418,65 @@ def test_inventory_dialog_edits_stock(window):
     dialog.set_quantity(plate_id, 1)
     dialog.reject()
     assert window.services.inventory.available_plates(plate_id) == 5
+
+
+def test_errors_disable_optimize_button_warnings_do_not(window, qtbot):
+    model = window.pieces_widget.model
+    assert window.optimize_button.isEnabled() and window.action_optimize.isEnabled()
+    model.setData(piece_index(window, 1, Column.WIDTH), "5000", EDIT)
+    qtbot.waitUntil(lambda: not window.optimize_button.isEnabled())
+    assert not window.action_optimize.isEnabled()
+    assert "Corrija" in window.optimize_button.toolTip()
+    model.setData(piece_index(window, 1, Column.WIDTH), "564", EDIT)
+    qtbot.waitUntil(window.optimize_button.isEnabled)
+    # una advertencia (material distinto) no bloquea
+    window.project.furniture[0].pieces[0] = replace(
+        window.project.furniture[0].pieces[0], material_id=999
+    )
+    window.run_validation()
+    assert window.validation_panel.issues and window.optimize_button.isEnabled()
+
+
+def test_shortcuts_and_toolbar(window):
+    shortcuts = {k.toString() for k in window.action_optimize.shortcuts()}
+    assert {"Ctrl+Return", "Ctrl+Enter", "F5"} <= shortcuts
+    assert window.action_export_default is window.export_actions["pdf"]
+    assert window.action_export_default.shortcut().toString() == "Ctrl+E"
+    assert window.action_save_as.shortcut() == QKeySequence("Ctrl+Shift+S")
+    toolbar_actions = window.toolbar.actions()
+    for action in (window.action_new, window.action_open, window.action_save):
+        assert action in toolbar_actions and not action.icon().isNull()
+    assert window.action_optimize in toolbar_actions
+
+
+def test_optimize_action_runs_and_toggles_cancel(window, qtbot):
+    assert not window.action_cancel.isEnabled()
+    with qtbot.waitSignal(window.optimization_finished, timeout=30_000):
+        window.action_optimize.trigger()
+        assert window.action_cancel.isEnabled() and not window.action_optimize.isEnabled()
+    assert not window.action_cancel.isEnabled() and window.action_optimize.isEnabled()
+    assert window.action_confirm.isEnabled()
+
+
+def test_parameter_and_grain_tooltips(window):
+    params = window.parameters_widget
+    assert "513,2" in params.edits["kerf"].toolTip()
+    assert "1810 × 2800" in params.edits["edge_margin"].toolTip()
+    assert "veta" in params.rotation_check.toolTip()
+    assert "Veta" in window.plate_widget.grain_combo.toolTip()
+    header = window.pieces_widget.model.headerData(
+        Column.GRAIN, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole
+    )
+    assert "Vertical" in header
+
+
+def test_worker_throttles_progress(window):
+    prepared = window.services.optimization.prepare(window.project)
+    worker = OptimizationWorker(prepared)
+    emitted = []
+    worker.signals.progress.connect(emitted.append)
+    for i in range(1000):
+        worker._on_progress(i / 1000, None)
+    worker._on_progress(1.0, None)
+    assert emitted[0] == 0 and emitted[-1] == 1.0
+    assert len(emitted) < 10

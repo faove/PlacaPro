@@ -2,7 +2,7 @@
 
 Aplicación de escritorio en Python (PySide6 + SQLite) para **optimizar cortes de placas de melamina / MDF / madera** en la fabricación de muebles.
 
-Esta carpeta contiene el análisis, la arquitectura y la planificación por sprints. Cada sprint es un documento independiente con objetivo, alcance, tareas, criterios de aceptación y entregables verificables.
+Para instalar y usar la aplicación, ver el [README principal](../README.md). Esta carpeta contiene el análisis, la arquitectura y la planificación por sprints. Cada sprint es un documento independiente con objetivo, alcance, tareas, criterios de aceptación y entregables verificables.
 
 ## Índice
 

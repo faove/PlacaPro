@@ -46,3 +46,23 @@ def test_setup_logging_creates_file(tmp_path, monkeypatch):
     for handler in logging.root.handlers:
         handler.flush()
     assert "hola" in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.ui
+def test_first_start_optimizes_demo_and_second_start_reuses_it(qtbot, tmp_path):
+    db = Database(":memory:")
+    settings = QSettings(str(tmp_path / "s.ini"), QSettings.Format.IniFormat)
+    window = app.create_main_window(db, settings, time_budget_s=2)
+    qtbot.addWidget(window)
+    assert window.project.name == "Mesita de noche"
+    assert window.is_optimizing
+    qtbot.waitUntil(lambda: not window.is_optimizing, timeout=10_000)
+    assert window.result is not None and window.result.id is not None
+    assert window.result.sheets_count == 1 and not window.result.unplaced
+    window.close()
+
+    again = app.create_main_window(db, settings)
+    qtbot.addWidget(again)
+    assert not again.is_optimizing
+    assert again.result is not None and again.result.id == window.result.id
+    again.close()

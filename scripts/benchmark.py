@@ -2,6 +2,8 @@
 
 Uso: ``python scripts/benchmark.py [--write]`` (``--write`` actualiza docs/benchmarks.md).
 Las instancias son listas de muebles sintéticas, reproducibles por semilla.
+
+``--write`` regenera la tabla y conserva las secciones ``## …`` escritas a mano.
 """
 
 from __future__ import annotations
@@ -92,7 +94,12 @@ def main() -> None:
             "con piezas grandes suele ser inalcanzable: llegar a ella demuestra el óptimo, pero "
             "no llegar no demuestra lo contrario.\n\n" + header + body + "\n"
         )
-        (ROOT / "docs" / "benchmarks.md").write_text(text, encoding="utf-8")
+        path = ROOT / "docs" / "benchmarks.md"
+        previous = path.read_text(encoding="utf-8") if path.exists() else ""
+        manual = previous.find("\n## ")
+        if manual >= 0:
+            text += previous[manual:]
+        path.write_text(text, encoding="utf-8")
         print("docs/benchmarks.md actualizado")
 
 

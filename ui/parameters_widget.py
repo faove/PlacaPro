@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from models.parametros import CutMode, CuttingParameters, OptimizationLevel
+from ui import tooltips
 from ui.units_display import ERROR_STYLE, LengthEdit, UnitsDisplay, format_area_input, parse_area_m2
 from utils.units import LengthError
 
@@ -65,6 +66,18 @@ class ParametersWidget(QWidget):
         self.stock_check.toggled.connect(lambda v: self._update(use_stock_first=v))
         self.offcuts_check = QCheckBox("Usar retazos del stock")
         self.offcuts_check.toggled.connect(lambda v: self._update(use_offcuts_first=v))
+
+        for name, tip in (
+            ("kerf", tooltips.KERF),
+            ("edge_margin", tooltips.EDGE_MARGIN),
+            ("extra_spacing", tooltips.EXTRA_SPACING),
+            ("min_offcut_width", tooltips.MIN_OFFCUT),
+            ("min_offcut_height", tooltips.MIN_OFFCUT),
+        ):
+            self.edits[name].set_help(tip)
+        self.rotation_check.setToolTip(tooltips.ROTATION)
+        self.level_combo.setToolTip(tooltips.LEVEL)
+        self.mode_combo.setToolTip(tooltips.CUT_MODE)
 
         cut_box = QGroupBox("Corte")
         cut_form = QFormLayout(cut_box)

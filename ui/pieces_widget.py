@@ -33,6 +33,7 @@ from models.pieza import GrainDirection, PieceCategory, PieceSpec
 from models.placa import PlateFormat
 from models.proyecto import Furniture, Project
 from models.validation import IssueCode, Severity, ValidationIssue, validate_piece
+from ui import tooltips
 from ui.theme import ERROR_BACKGROUND, WARNING_COLOR
 from ui.units_display import UnitsDisplay
 from utils.units import LengthError
@@ -163,6 +164,12 @@ class PiecesTableModel(QAbstractTableModel):
     def headerData(  # noqa: N802
         self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
     ) -> Any:
+        if (
+            role == Qt.ItemDataRole.ToolTipRole
+            and orientation == Qt.Orientation.Horizontal
+            and section == Column.GRAIN
+        ):
+            return tooltips.PIECE_GRAIN
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Vertical:

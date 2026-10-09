@@ -87,6 +87,38 @@ class TestPiece:
             validate_piece(vertical, grained_plate, PARAMS)
         )
 
+    def test_too_big_message_is_actionable(self):
+        grained_plate = replace(PLATE, grain=PlateGrain.ALONG_HEIGHT)
+        door = piece(name="Puerta", width=4820, height=29000, grain=GrainDirection.VERTICAL)
+        [issue] = validate_piece(door, grained_plate, PARAMS)
+        assert issue.message.startswith(
+            "La pieza «Puerta» (482 × 2900 mm) no cabe en la placa 1830 × 2820 con la veta vertical"
+        )
+        assert issue.message.endswith("reduzca el alto")
+
+    @pytest.mark.parametrize(
+        ("changes", "advice"),
+        [
+            ({"grain": GrainDirection.VERTICAL}, "cambie la veta a «Indiferente»"),
+            ({"fixed_orientation": True}, "quite la orientación fija"),
+            ({"can_rotate": False}, "permita girar la pieza"),
+        ],
+    )
+    def test_too_big_message_says_what_blocks_rotation(self, changes, advice):
+        grained_plate = replace(PLATE, grain=PlateGrain.ALONG_HEIGHT)
+        long_piece = piece(width=25000, height=10000, **changes)
+        [issue] = [
+            i
+            for i in validate_piece(long_piece, grained_plate, PARAMS)
+            if i.code is IssueCode.PIECE_LARGER_THAN_PLATE
+        ]
+        assert f"cabría girada: {advice} o reduzca el ancho" in issue.message
+
+    def test_too_big_message_mentions_global_rotation_switch(self):
+        params = replace(PARAMS, allow_rotation=False)
+        [issue] = validate_piece(piece(width=25000, height=10000), PLATE, params)
+        assert "«Permitir rotación de piezas» en PARÁMETROS" in issue.message
+
     def test_grain_conflict_warning_with_fixed_orientation(self):
         grained_plate = replace(PLATE, grain=PlateGrain.ALONG_HEIGHT)
         p = piece(grain=GrainDirection.HORIZONTAL, fixed_orientation=True)

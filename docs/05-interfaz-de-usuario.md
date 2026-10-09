@@ -5,7 +5,9 @@
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ Menú: Archivo (Nuevo, Abrir, Guardar, Guardar como, Duplicar, Eliminar, Exportar ▸)  │
-│       Ver (Unidades: mm/cm/m, Zoom)   Datos (Placas, Inventario, Retazos)   Ayuda    │
+│       Ver (Unidades)  Proyecto (Optimizar, Cancelar, Confirmar)  Datos (Inventario, │
+│       Retazos)                                                                       │
+│ Barra: Nuevo · Abrir · Guardar | Optimizar cortes · PDF                              │
 ├───────────────────────┬──────────────────────────────────────┬───────────────────────┤
 │ PANEL IZQUIERDO       │ PANEL CENTRAL                        │ PANEL DERECHO         │
 │ (QToolBox / acordeón) │                                      │                       │
@@ -86,6 +88,17 @@ Leyenda generada desde el mismo diccionario (fuente única). Contraste del texto
 7. Revisar desperdicio y retazos.
 8. Revisar lista y secuencia de cortes.
 9. **Exportar PDF / CSV**.
+
+### Atajos (sprint 7)
+
+| Atajo | Acción |
+|---|---|
+| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` | Nuevo / Abrir / Guardar / Guardar como |
+| `Ctrl+Enter` (también `Ctrl+Return` y `F5`) | Optimizar |
+| `Ctrl+E` | Exportar en el primer formato del menú (PDF) |
+| `Ctrl+Q` | Salir |
+
+El botón **OPTIMIZAR CORTES** y la acción *Proyecto ▸ Optimizar* se deshabilitan mientras haya **errores** de validación (el tooltip explica por qué); las advertencias no bloquean. Los textos de ayuda de kerf, margen, separación, rotación, nivel, máquina, mínimos de retazo y veta (placa y cabecera de la columna *Veta*) están en `ui/tooltips.py`.
 
 ## 6. Unidades
 

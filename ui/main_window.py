@@ -11,7 +11,7 @@ from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -23,7 +23,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QStyle,
     QTabWidget,
+    QToolBar,
     QToolBox,
     QVBoxLayout,
     QWidget,
@@ -33,7 +35,7 @@ from models.parametros import CuttingParameters
 from models.placa import PlateFormat
 from models.proyecto import Project
 from models.resultado import OptimizationResult
-from models.validation import IssueCode, ValidationFailed, ValidationIssue
+from models.validation import IssueCode, Severity, ValidationFailed, ValidationIssue
 from services.app_services import AppServices
 from services.inventory_service import ConfirmationError
 from services.optimization_service import OptimizationOutcome, PreparedOptimization
@@ -67,6 +69,11 @@ KEY_UNIT = "view/unit"
 KEY_LAST_PROJECT = "project/last_id"
 KEY_EXPORT_DIR = "export/last_dir"
 
+OPTIMIZE_SHORTCUTS = ("Ctrl+Return", "Ctrl+Enter", "F5")
+EXPORT_SHORTCUT = "Ctrl+E"
+OPTIMIZE_TOOLTIP = "Calcular la distribución de cortes (Ctrl+Enter o F5)"
+BLOCKED_TOOLTIP = "Corrija los errores de la pestaña Mensajes para poder optimizar"
+
 
 def _scrollable(widget: QWidget) -> QScrollArea:
     area = QScrollArea()
@@ -97,6 +104,7 @@ class MainWindow(QMainWindow):
         self.plate: PlateFormat | None = None
         self.dirty = False
         self._worker: OptimizationWorker | None = None
+        self._has_errors = False
         self._prepared: PreparedOptimization | None = None
         self.thread_pool = QThreadPool(self)
         self.thread_pool.setMaxThreadCount(1)
@@ -133,8 +141,7 @@ class MainWindow(QMainWindow):
 
         self.optimize_button = QPushButton("OPTIMIZAR CORTES")
         self.optimize_button.setObjectName("optimizeButton")
-        self.optimize_button.setShortcut(QKeySequence("F5"))
-        self.optimize_button.setToolTip("Calcular la distribución de cortes (F5)")
+        self.optimize_button.setToolTip(OPTIMIZE_TOOLTIP)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 1000)
         self.progress_bar.setTextVisible(False)
@@ -190,14 +197,21 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.status_message, 1)
         self.resize(1440, 860)
 
+    def _icon(self, pixmap: QStyle.StandardPixmap) -> QIcon:
+        return self.style().standardIcon(pixmap)
+
     def _build_menus(self) -> None:
+        sp = QStyle.StandardPixmap
         file_menu = self.menuBar().addMenu("&Archivo")
         self.action_new = self._action(file_menu, "&Nuevo", self.new_project, QKeySequence.New)
+        self.action_new.setIcon(self._icon(sp.SP_FileIcon))
         self.action_open = self._action(
             file_menu, "&Abrir…", self.open_project_dialog, QKeySequence.Open
         )
+        self.action_open.setIcon(self._icon(sp.SP_DialogOpenButton))
         file_menu.addSeparator()
         self.action_save = self._action(file_menu, "&Guardar", self.save, QKeySequence.Save)
+        self.action_save.setIcon(self._icon(sp.SP_DialogSaveButton))
         self.action_save_as = self._action(
             file_menu, "Guardar &como…", self.save_as, QKeySequence.SaveAs
         )
@@ -210,6 +224,11 @@ class MainWindow(QMainWindow):
             self.export_actions[exporter.id] = self._action(
                 export_menu, exporter.name, lambda e=exporter.id: self.export(e)
             )
+        # Ctrl+E exporta en el primer formato del menú (PDF).
+        self.action_export_default = next(iter(self.export_actions.values()), None)
+        if self.action_export_default is not None:
+            self.action_export_default.setShortcut(QKeySequence(EXPORT_SHORTCUT))
+            self.action_export_default.setIcon(self._icon(sp.SP_ArrowDown))
         file_menu.addSeparator()
         self._action(file_menu, "&Salir", self.close, QKeySequence.Quit)
 
@@ -226,11 +245,36 @@ class MainWindow(QMainWindow):
             units_menu.addAction(action)
             self.unit_actions[unit] = action
 
+        project_menu = self.menuBar().addMenu("&Proyecto")
+        self.action_optimize = self._action(project_menu, "&Optimizar cortes", self.optimize)
+        self.action_optimize.setShortcuts([QKeySequence(k) for k in OPTIMIZE_SHORTCUTS])
+        self.action_optimize.setIcon(self._icon(sp.SP_MediaPlay))
+        self.action_cancel = self._action(
+            project_menu, "&Cancelar optimización", self.cancel_optimization
+        )
+        self.action_cancel.setEnabled(False)
+        self.action_confirm = self._action(
+            project_menu, "Confirmar y &descontar stock…", self.confirm_plan
+        )
+
         data_menu = self.menuBar().addMenu("&Datos")
         self.action_inventory = self._action(
             data_menu, "&Inventario de placas…", self.open_inventory
         )
         self._action(data_menu, "&Retazos en stock", self.show_offcuts)
+
+        toolbar = QToolBar("Barra principal", self)
+        toolbar.setObjectName("mainToolBar")
+        toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        for action in (self.action_new, self.action_open, self.action_save):
+            toolbar.addAction(action)
+        toolbar.addSeparator()
+        toolbar.addAction(self.action_optimize)
+        if self.action_export_default is not None:
+            toolbar.addAction(self.action_export_default)
+        self.addToolBar(toolbar)
+        self.toolbar = toolbar
 
     def _action(self, menu, text, slot, shortcut=None) -> QAction:  # type: ignore[no-untyped-def]
         action = QAction(text, self)
@@ -482,6 +526,16 @@ class MainWindow(QMainWindow):
         self.validation_panel.set_issues(issues)
         title = f"Mensajes ({len(issues)})" if issues else "Mensajes"
         self.bottom_tabs.setTabText(self.messages_tab, title)
+        self._has_errors = any(i.severity is Severity.ERROR for i in issues)
+        self._update_optimize_enabled()
+
+    def _update_optimize_enabled(self) -> None:
+        """Con errores bloqueantes (o una optimización en curso) no se puede optimizar;
+        las advertencias no bloquean."""
+        enabled = not self._has_errors and not self.is_optimizing
+        self.optimize_button.setEnabled(enabled)
+        self.action_optimize.setEnabled(enabled)
+        self.optimize_button.setToolTip(BLOCKED_TOOLTIP if self._has_errors else OPTIMIZE_TOOLTIP)
 
     # ------------------------------------------------------------------ resultado
     def show_result(self, result: OptimizationResult | None) -> None:
@@ -518,21 +572,20 @@ class MainWindow(QMainWindow):
 
     def _update_confirm_state(self, stale: bool) -> None:
         r = self.result
+        enabled = False
         if r is None:
-            self.result_widget.set_confirm_state(False, "")
+            text = ""
         elif r.is_confirmed:
             when = r.confirmed_at.astimezone().strftime("%d/%m/%Y %H:%M")  # type: ignore[union-attr]
-            self.result_widget.set_confirm_state(False, f"✔ Plan confirmado el {when}.")
+            text = f"✔ Plan confirmado el {when}."
         elif r.id is None:
-            self.result_widget.set_confirm_state(
-                False, "Guarde el proyecto y optimice de nuevo para poder confirmar el plan."
-            )
+            text = "Guarde el proyecto y optimice de nuevo para poder confirmar el plan."
         elif stale:
-            self.result_widget.set_confirm_state(
-                False, "Optimice de nuevo: el resultado está desactualizado."
-            )
+            text = "Optimice de nuevo: el resultado está desactualizado."
         else:
-            self.result_widget.set_confirm_state(True, self._usage_text(r))
+            enabled, text = True, self._usage_text(r)
+        self.result_widget.set_confirm_state(enabled, text)
+        self.action_confirm.setEnabled(enabled)
 
     @staticmethod
     def _usage_text(result: OptimizationResult) -> str:
@@ -688,7 +741,8 @@ class MainWindow(QMainWindow):
             self.status_message.setText("Cancelando…")
 
     def _set_running(self, running: bool) -> None:
-        self.optimize_button.setEnabled(not running)
+        self._update_optimize_enabled()
+        self.action_cancel.setEnabled(running)
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(running)
         self.cancel_button.setVisible(running)

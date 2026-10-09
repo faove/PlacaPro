@@ -5,6 +5,8 @@ La v1 deja **interfaces, entidades y tablas** listas para lo siguiente, sin UI c
 ## 1. Generador automático de muebles
 - Interfaz: `FurnitureGenerator.generate(dims: FurnitureDimensions, params: dict) -> list[PieceSpec]`.
 - v1: `ManualGenerator` (devuelve las piezas cargadas a mano).
+- v1 (experimental, sin UI): `DeskGenerator` en `services/furniture_generator.py` — tapa, 2 laterales y faldón a partir de `FurnitureDimensions`; no está registrado en `GENERATORS`. `tests/test_future_ready.py` recorre Dimensiones → Despiece → Piezas → Optimizador.
+- **Pendiente al exponer generadores en la UI**: `validate_project` valida `furniture.pieces` (las piezas manuales); hay que validar el despiece generado (`OptimizationService.piece_specs`) y mapear los mensajes a campos del mueble en lugar de a filas de la tabla.
 - Futuro: `DeskGenerator`, `NightstandGenerator`, `CabinetGenerator`, `WardrobeGenerator` basados en reglas:
   - Ejemplo escritorio 1400 × 750 × 600, espesor e = 18:
     - Laterales: 2 × (alto − e) × profundidad
@@ -17,7 +19,7 @@ La v1 deja **interfaces, entidades y tablas** listas para lo siguiente, sin UI c
 ## 2. Costos
 - `MaterialCost`: precio por placa y por m²; costo de desperdicio = área desperdiciada × precio m².
 - Herrajes (`hardware_items`, `furniture_hardware`), mano de obra (horas × tarifa), tapacantos (metros lineales por pieza).
-- `CostService.compute(project, result) -> CostBreakdown` con costo total, precio de venta y margen %.
+- `CostService.compute(project, result, material_costs=None) -> CostBreakdown` con costo total, precio de venta y margen %. En v1 la firma está fijada por un test y lanza `NotImplementedError`; las tablas `hardware_items` y `furniture_hardware` ya existen.
 
 ## 3. Exportadores
 | Formato | Uso | Notas |

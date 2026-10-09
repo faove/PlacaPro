@@ -103,6 +103,7 @@ class LengthEdit(QLineEdit):
         self.allow_zero = allow_zero
         self._value = value
         self._error: str | None = None
+        self._help = ""
         self.editingFinished.connect(self._commit)
         units.unit_changed.connect(lambda _unit: self._refresh())
         self._refresh()
@@ -120,16 +121,25 @@ class LengthEdit(QLineEdit):
     def error(self) -> str | None:
         return self._error
 
+    def set_help(self, text: str) -> None:
+        """Texto de ayuda del tooltip (el error, si lo hay, tiene prioridad)."""
+        self._help = text
+        self._update_tooltip()
+
+    def _update_tooltip(self) -> None:
+        unit = f"Valor en {self.units.symbol}"
+        self.setToolTip(self._error or (f"{self._help}<br><br>{unit}" if self._help else unit))
+
     def _refresh(self) -> None:
         if self._error is None:
             self.setText(self.units.format(self._value))
         self.setPlaceholderText(self.units.symbol)
-        self.setToolTip(self._error or f"Valor en {self.units.symbol}")
+        self._update_tooltip()
 
     def _set_error(self, message: str | None) -> None:
         self._error = message
         self.setStyleSheet(ERROR_STYLE if message else "")
-        self.setToolTip(message or f"Valor en {self.units.symbol}")
+        self._update_tooltip()
 
     def _commit(self) -> None:
         try:

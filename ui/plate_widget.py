@@ -28,6 +28,7 @@ from models.placa import PlateFormat, PlateGrain
 from models.validation import ValidationFailed
 from services.inventory_service import InventoryService
 from services.plate_service import PlateService
+from ui import tooltips
 from ui.theme import ERROR_COLOR
 from ui.units_display import LengthEdit, UnitsDisplay
 
@@ -66,6 +67,7 @@ class PlateWidget(QWidget):
         self.color_edit = QLineEdit()
         self.supplier_combo = QComboBox()
         self.grain_combo = QComboBox()
+        self.grain_combo.setToolTip(tooltips.PLATE_GRAIN)
         for grain in PlateGrain:
             self.grain_combo.addItem(grain.label, grain.value)
         self.stock_spin = QSpinBox()

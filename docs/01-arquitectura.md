@@ -94,6 +94,7 @@ PlacaPro/
 │   ├── furniture_widget.py     # (preparado) dimensiones generales del mueble
 │   ├── workers.py              # QThread/QRunnable para optimizar sin bloquear
 │   ├── units_display.py        # formateo según unidad elegida
+│   ├── tooltips.py             # textos de ayuda de parámetros y veta
 │   └── theme.py                # paleta, QSS, colores por categoría
 ├── utils/
 │   ├── units.py

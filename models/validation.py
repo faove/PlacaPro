@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from models.parametros import CuttingParameters
-from models.pieza import PieceSpec
+from models.pieza import GrainDirection, PieceSpec
 from models.placa import PlateFormat
 from models.proyecto import Project
 from optimization.orientation import allowed_rotations, grain_required_rotation, oriented_size
@@ -245,30 +245,64 @@ def validate_piece(
         )
 
     if dims_ok and 2 * params.edge_margin < min(plate.width, plate.height):
-        usable = plate.usable_rect(params.edge_margin)
-        rotations = allowed_rotations(spec, plate.grain, params.allow_rotation)
-        fits_any = any(
-            w <= usable.w and h <= usable.h
-            for w, h in (oriented_size(spec.width, spec.height, r) for r in rotations)
-        )
-        if not fits_any:
-            would_fit_rotated = spec.height <= usable.w and spec.width <= usable.h
-            reason = (
-                " (cabría girada, pero la veta o la orientación no lo permiten)"
-                if would_fit_rotated and len(rotations) == 1
-                else ""
-            )
+        message = _fit_problem(spec, name, plate, params)
+        if message is not None:
             issues.append(
                 _error(
                     IssueCode.PIECE_LARGER_THAN_PLATE,
-                    f"La pieza «{name}» ({spec.dimensions_label} mm) no cabe en la superficie "
-                    f"útil de la placa ({format_length(usable.w)} × {format_length(usable.h)} mm "
-                    f"descontando un margen de {_mm(params.edge_margin)}){reason}",
+                    message,
                     field="width",
                     location=location,
                 )
             )
     return issues
+
+
+def _rotation_blocker(spec: PieceSpec) -> str:
+    """Por qué la pieza no puede girarse (para sugerir qué cambiar)."""
+    if spec.fixed_orientation:
+        return "quite la orientación fija"
+    if spec.grain is not GrainDirection.NONE:
+        return "cambie la veta a «Indiferente»"
+    if not spec.can_rotate:
+        return "permita girar la pieza"
+    return "active «Permitir rotación de piezas» en PARÁMETROS"
+
+
+def _fit_problem(
+    spec: PieceSpec, name: str, plate: PlateFormat, params: CuttingParameters
+) -> str | None:
+    """Mensaje accionable si la pieza no cabe en la superficie útil; ``None`` si cabe."""
+    usable = plate.usable_rect(params.edge_margin)
+    rotations = allowed_rotations(spec, plate.grain, params.allow_rotation)
+    if any(
+        w <= usable.w and h <= usable.h
+        for w, h in (oriented_size(spec.width, spec.height, r) for r in rotations)
+    ):
+        return None
+    # Medidas de la pieza que sobran, en la orientación en que se colocaría.
+    rotated = rotations[0]
+    along_plate_width, along_plate_height = ("alto", "ancho") if rotated else ("ancho", "alto")
+    w, h = oriented_size(spec.width, spec.height, rotated)
+    too_big = [
+        d
+        for d, over in ((along_plate_width, w > usable.w), (along_plate_height, h > usable.h))
+        if over
+    ]
+    reduce = "reduzca " + " y ".join(f"el {d}" for d in too_big)
+    condition = ""
+    if len(rotations) == 1 and spec.grain is not GrainDirection.NONE:
+        condition = f" con la {spec.grain.label.lower()}"
+    fits_rotated = len(rotations) == 1 and all(
+        a <= b for a, b in zip(oriented_size(w, h, True), (usable.w, usable.h), strict=True)
+    )
+    advice = f"cabría girada: {_rotation_blocker(spec)} o {reduce}" if fits_rotated else reduce
+    return (
+        f"La pieza «{name}» ({spec.dimensions_label} mm) no cabe en la placa "
+        f"{format_length(plate.width)} × {format_length(plate.height)}{condition} "
+        f"(superficie útil {format_length(usable.w)} × {format_length(usable.h)} mm con "
+        f"margen de {_mm(params.edge_margin)}); {advice}"
+    )
 
 
 def validate_project(project: Project, plate: PlateFormat | None) -> ValidationReport:

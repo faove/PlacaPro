@@ -63,7 +63,7 @@ QToolBox::tab {{
     font-weight: bold;
     border: 1px solid palette(mid);
     border-radius: 4px;
-    padding: 4px 8px;
+    padding: 0 8px;
 }}
 QToolBox::tab:selected {{
     background: palette(highlight);

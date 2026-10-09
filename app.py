@@ -1,7 +1,7 @@
 """Punto de entrada de PlacaPro: ``python app.py``.
 
 Arranque: log → ``QApplication`` → base SQLite (migrar + datos iniciales) → servicios →
-``MainWindow`` con el último proyecto (o la demo).
+``MainWindow`` con el último proyecto (o la demo, que se optimiza sola la primera vez).
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from database.seed import seed
 from services.app_services import AppServices
 from ui.main_window import MainWindow
 from ui.theme import apply_theme
+from ui.workers import GIL_SWITCH_INTERVAL_S
 from utils.constants import APP_DATA_DIR, APP_NAME, ORGANIZATION
 
 LOG_PATH = APP_DATA_DIR / "placapro.log"
@@ -59,9 +60,10 @@ def create_main_window(
     settings: QSettings | None = None,
     *,
     time_budget_s: float | None = None,
+    optimize_demo: bool = True,
 ) -> MainWindow:
     """Abre/migra la base, carga los datos iniciales y arma la ventana con la demo o el
-    último proyecto abierto."""
+    último proyecto abierto. En el primer arranque (base nueva) la demo se optimiza sola."""
     if db is None:
         db = Database.open_default()
     else:
@@ -73,12 +75,15 @@ def create_main_window(
         time_budget_s=time_budget_s,
     )
     window.open_initial_project(demo.demo_project_id)
+    if optimize_demo and demo.seeded and window.project.id == demo.demo_project_id:
+        window.optimize()
     return window
 
 
 def main() -> int:
     setup_logging()
     install_exception_hook()
+    sys.setswitchinterval(GIL_SWITCH_INTERVAL_S)  # UI fluida mientras optimiza
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORGANIZATION)
