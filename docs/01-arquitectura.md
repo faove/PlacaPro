@@ -74,9 +74,12 @@ PlacaPro/
 │   ├── cost_service.py         # (preparado, stub)
 │   └── furniture_generator.py  # (preparado) interfaz FurnitureGenerator + ManualGenerator
 ├── exporters/
-│   ├── base.py                 # Protocol Exporter + registry
-│   ├── pdf_exporter.py         # QPdfWriter/QPainter o reportlab
-│   └── csv_exporter.py
+│   ├── __init__.py             # load_exporters(): registro bajo demanda (PDF/SVG usan Qt)
+│   ├── base.py                 # Protocol Exporter + ExportContext + registry
+│   ├── tables.py               # tablas comunes (lista de cortes, secuencia, despiece)
+│   ├── pdf_exporter.py         # QPdfWriter/QPainter, reutiliza SheetScene.render()
+│   ├── csv_exporter.py         # ; + UTF-8 con BOM (Excel en español)
+│   └── svg_exporter.py         # ejemplo mínimo: un SVG por placa
 ├── ui/
 │   ├── main_window.py
 │   ├── project_widget.py

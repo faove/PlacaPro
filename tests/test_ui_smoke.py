@@ -316,3 +316,102 @@ def test_validation_error_switches_to_messages_tab(window):
     assert not window.optimize()
     assert window.bottom_tabs.currentIndex() == window.messages_tab
     assert window.bottom_tabs.tabText(window.messages_tab).startswith("Mensajes (")
+
+
+def test_export_menu_and_export(window, qtbot, tmp_path):
+    assert list(window.export_actions)[:3] == ["pdf", "csv", "svg"]
+    window.show_result(None)
+    assert not window.export_actions["pdf"].isEnabled()
+    assert window.export("pdf", tmp_path / "x.pdf") == []
+
+    optimize_and_wait(window, qtbot)
+    assert window.export_actions["pdf"].isEnabled()
+    [pdf] = window.export("pdf", tmp_path / "demo.pdf")
+    assert pdf.exists() and "demo.pdf" in window.status_message.text()
+    window.set_unit(Unit.CM)
+    _, cuts = window.export("csv", tmp_path / "demo.csv")
+    assert "Ancho (cm)" in cuts.read_text(encoding="utf-8-sig")
+
+
+def test_confirm_plan_discounts_stock(window, qtbot):
+    plate_id = window.project.plate_format_id
+    inventory = window.services.inventory
+    inventory.set_available_plates(plate_id, 2)
+    window.parameters_widget.stock_check.setChecked(True)
+    assert window.save()
+    result = optimize_and_wait(window, qtbot)
+    assert result.stock_plates_used() == {plate_id: 1}
+    assert window.result_widget.confirm_button.isEnabled()
+    assert "1 placa del inventario" in window.result_widget.confirm_label.text()
+
+    assert window.confirm_plan(confirm=False)
+    assert inventory.available_plates(plate_id) == 1
+    assert window.result.is_confirmed
+    assert not window.result_widget.confirm_button.isEnabled()
+    assert "confirmado" in window.result_widget.confirm_label.text()
+    assert "stock: 1" in window.plate_widget.plate_list.currentItem().text()
+    assert not window.confirm_plan(confirm=False)  # una sola vez
+
+    # Reabrir mantiene el estado confirmado.
+    assert window.open_project(window.project.id, ask_save=False)
+    assert window.result.is_confirmed and not window.result_widget.confirm_button.isEnabled()
+
+
+def test_confirm_disabled_when_stale_or_unsaved(window, qtbot):
+    optimize_and_wait(window, qtbot)
+    window.pieces_widget.model.setData(piece_index(window, 0, Column.WIDTH), "410", EDIT)
+    window.run_validation()
+    assert not window.result_widget.confirm_button.isEnabled()
+    assert not window.confirm_plan(confirm=False)
+
+    window.dirty = False
+    assert window.new_project()
+    window.pieces_widget.model.add_piece()
+    model = window.pieces_widget.model
+    model.setData(model.index(0, Column.WIDTH), "300", EDIT)
+    model.setData(model.index(0, Column.HEIGHT), "300", EDIT)
+    optimize_and_wait(window, qtbot)
+    assert window.result.id is None
+    assert "Guarde el proyecto" in window.result_widget.confirm_label.text()
+
+
+def test_offcuts_tab_saves_consumes_and_deletes(window, qtbot):
+    result = optimize_and_wait(window, qtbot)
+    offcuts = window.offcuts_widget
+    reusable = [o for s in result.sheets for o in s.offcuts if o.status.value == "reusable"]
+    assert offcuts.result_table.rowCount() == len(reusable) > 0
+    assert offcuts.save_all_button.isEnabled()
+
+    stored = offcuts.save_to_stock(selected_only=False)
+    assert len(stored) == len(reusable)
+    assert offcuts.stock_table.rowCount() == len(reusable)
+    assert not offcuts.save_all_button.isEnabled()  # ya están en stock
+    assert all(
+        o.status.value == "in_stock" for s in window.result.sheets for o in s.offcuts if o.label
+    )
+
+    window.show_offcuts()
+    assert window.bottom_tabs.currentIndex() == window.offcuts_tab
+    offcuts.stock_table.selectRow(0)
+    assert offcuts.mark_selected_consumed() == 1
+    assert offcuts.stock_table.rowCount() == len(reusable) - 1
+    if offcuts.stock_table.rowCount():
+        offcuts.stock_table.selectRow(0)
+        assert offcuts.delete_selected(confirm=False) == 1
+    assert window.services.inventory.available_offcuts() == []
+
+
+def test_inventory_dialog_edits_stock(window):
+    plate_id = window.project.plate_format_id
+    dialog = window.open_inventory()
+    assert dialog.table.rowCount() == len(window.services.plates.list_formats())
+    dialog.set_quantity(plate_id, 5)
+    assert dialog.changes() == {plate_id: 5}
+    dialog.accept()
+    assert window.services.inventory.available_plates(plate_id) == 5
+    assert "stock: 5" in window.plate_widget.plate_list.currentItem().text()
+
+    dialog = window.open_inventory()
+    dialog.set_quantity(plate_id, 1)
+    dialog.reject()
+    assert window.services.inventory.available_plates(plate_id) == 5

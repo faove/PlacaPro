@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Any
 
 from models.parametros import CutMode
+from utils.units import Unit, format_length
 
 
 class CutOrientation(Enum):
@@ -14,6 +15,57 @@ class CutOrientation(Enum):
     """Línea de corte paralela al eje X (separa arriba / abajo)."""
     VERTICAL = "vertical"
     """Línea de corte paralela al eje Y (separa izquierda / derecha)."""
+
+
+class PartKind(Enum):
+    PIECE = "piece"
+    OFFCUT = "offcut"
+    """Retazo reutilizable."""
+    WASTE = "waste"
+    TRIM = "trim"
+    """Franja de refilado."""
+    STRIP = "strip"
+    """Tira o sub-tira que se seguirá cortando."""
+
+
+@dataclass(frozen=True)
+class ReleasedPart:
+    """Lo que libera un corte: pieza, retazo, desperdicio, refilado o tira (dmm)."""
+
+    kind: PartKind
+    label: str
+    width: int
+    height: int
+
+    def describe(self, orientation: CutOrientation, unit: Unit = Unit.MM) -> str:
+        """Texto para el operario en la unidad pedida («Lateral 1 (60 × 40)»).
+
+        De una tira solo interesa el ancho que fija el tope: el ancho si el corte es
+        vertical, el alto si es horizontal.
+        """
+        size = f"{format_length(self.width, unit)} × {format_length(self.height, unit)}"
+        if self.kind is PartKind.PIECE:
+            return f"{self.label} ({size})"
+        if self.kind is PartKind.OFFCUT:
+            return f"Retazo {self.label} ({size})"
+        if self.kind is PartKind.WASTE:
+            return f"Desperdicio ({size})"
+        if self.kind is PartKind.TRIM:
+            return "Refilado"
+        measure = self.width if orientation is CutOrientation.VERTICAL else self.height
+        return f"{self.label} ({format_length(measure, unit, with_unit=True)})"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind.value,
+            "label": self.label,
+            "width": self.width,
+            "height": self.height,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ReleasedPart:
+        return cls(PartKind(data["kind"]), data["label"], data["width"], data["height"])
 
 
 @dataclass(frozen=True)
@@ -25,7 +77,9 @@ class Cut:
     medida a ajustar en el tope, desde el borde de referencia de la región que se corta.
     ``kerf``: ancho de material que se lleva este corte (menor que el kerf nominal solo
     en el refilado, si el margen es más estrecho que la hoja). ``region``: nombre de la
-    región que se corta («Placa», «Tira A», «Tira A.2»…).
+    región que se corta («Placa», «Tira A», «Tira A.2»…). ``parts``: lo que libera el
+    corte, estructurado; ``resulting`` es su descripción en mm (resultados anteriores al
+    sprint 6 solo tienen ``resulting``).
     """
 
     order: int
@@ -39,10 +93,17 @@ class Cut:
     resulting: tuple[str, ...] = ()
     kerf: int = 0
     region: str = ""
+    parts: tuple[ReleasedPart, ...] = ()
 
     @property
     def kerf_area(self) -> int:
         return self.kerf * self.length
+
+    def resulting_labels(self, unit: Unit = Unit.MM) -> list[str]:
+        """Lo que libera el corte, con las medidas en ``unit``."""
+        if not self.parts:
+            return list(self.resulting)
+        return [p.describe(self.orientation, unit) for p in self.parts]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +118,7 @@ class Cut:
             "resulting": list(self.resulting),
             "kerf": self.kerf,
             "region": self.region,
+            "parts": [p.to_dict() for p in self.parts],
         }
 
     @classmethod
@@ -73,6 +135,7 @@ class Cut:
             resulting=tuple(data.get("resulting", ())),
             kerf=data.get("kerf", 0),
             region=data.get("region", ""),
+            parts=tuple(ReleasedPart.from_dict(p) for p in data.get("parts", ())),
         )
 
 

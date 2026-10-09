@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import logging
 from html import escape
+from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -33,9 +35,12 @@ from models.proyecto import Project
 from models.resultado import OptimizationResult
 from models.validation import IssueCode, ValidationFailed, ValidationIssue
 from services.app_services import AppServices
+from services.inventory_service import ConfirmationError
 from services.optimization_service import OptimizationOutcome, PreparedOptimization
 from ui.cut_list_widget import CutListWidget
 from ui.cutting_diagram_widget import CuttingDiagramWidget
+from ui.inventory_widget import InventoryDialog
+from ui.offcuts_widget import OffcutsWidget
 from ui.open_project_dialog import OpenProjectDialog
 from ui.parameters_widget import ParametersWidget
 from ui.pieces_widget import PiecesWidget
@@ -60,6 +65,7 @@ KEY_SPLITTER = "window/splitter"
 KEY_CENTER_SPLITTER = "window/center_splitter"
 KEY_UNIT = "view/unit"
 KEY_LAST_PROJECT = "project/last_id"
+KEY_EXPORT_DIR = "export/last_dir"
 
 
 def _scrollable(widget: QWidget) -> QScrollArea:
@@ -146,9 +152,13 @@ class MainWindow(QMainWindow):
         left_layout.addLayout(progress_row)
 
         self.diagram_widget = CuttingDiagramWidget(self.units)
-        # Pestañas inferiores: Lista de cortes, Secuencia y Mensajes de validación.
+        # Pestañas inferiores: Lista de cortes, Secuencia, Retazos y Mensajes de validación.
         self.cut_list_widget = CutListWidget(self.units)
         self.bottom_tabs: QTabWidget = self.cut_list_widget
+        self.offcuts_widget = OffcutsWidget(
+            self.services.inventory, self.units, self.plate_widget.materials()
+        )
+        self.offcuts_tab = self.bottom_tabs.addTab(self.offcuts_widget, "Retazos")
         self.validation_panel = ValidationPanel()
         self.messages_tab = self.bottom_tabs.addTab(self.validation_panel, "Mensajes")
         self.center_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -194,6 +204,13 @@ class MainWindow(QMainWindow):
         self.action_duplicate = self._action(file_menu, "&Duplicar", self.duplicate_project)
         self.action_delete = self._action(file_menu, "&Eliminar…", self.delete_project)
         file_menu.addSeparator()
+        export_menu = file_menu.addMenu("E&xportar")
+        self.export_actions: dict[str, QAction] = {}
+        for exporter in self.services.reports.exporters():
+            self.export_actions[exporter.id] = self._action(
+                export_menu, exporter.name, lambda e=exporter.id: self.export(e)
+            )
+        file_menu.addSeparator()
         self._action(file_menu, "&Salir", self.close, QKeySequence.Quit)
 
         view_menu = self.menuBar().addMenu("&Ver")
@@ -208,6 +225,12 @@ class MainWindow(QMainWindow):
             group.addAction(action)
             units_menu.addAction(action)
             self.unit_actions[unit] = action
+
+        data_menu = self.menuBar().addMenu("&Datos")
+        self.action_inventory = self._action(
+            data_menu, "&Inventario de placas…", self.open_inventory
+        )
+        self._action(data_menu, "&Retazos en stock", self.show_offcuts)
 
     def _action(self, menu, text, slot, shortcut=None) -> QAction:  # type: ignore[no-untyped-def]
         action = QAction(text, self)
@@ -234,6 +257,12 @@ class MainWindow(QMainWindow):
         self.cut_list_widget.piece_selected.connect(self.diagram_widget.select_piece)
         self.cut_list_widget.cut_selected.connect(self.diagram_widget.select_cut)
         self.result_widget.sheet_activated.connect(self.diagram_widget.show_sheet)
+        self.result_widget.confirm_requested.connect(lambda: self.confirm_plan())
+        self.offcuts_widget.result_updated.connect(self._on_result_updated)
+        self.offcuts_widget.stock_changed.connect(self._on_stock_changed)
+        self.plate_widget.plates_changed.connect(
+            lambda: self.offcuts_widget.set_materials(self.plate_widget.materials())
+        )
         self.optimize_button.clicked.connect(self.optimize)
         self.cancel_button.clicked.connect(self.cancel_optimization)
 
@@ -461,6 +490,7 @@ class MainWindow(QMainWindow):
         self.result_widget.set_result(result)
         self.diagram_widget.set_result(result)
         self.cut_list_widget.set_result(result)
+        self.offcuts_widget.set_result(result)
         self.update_stale()
 
     def show_message(self, html: str) -> None:
@@ -479,6 +509,124 @@ class MainWindow(QMainWindow):
         stale = self.result_is_stale
         self.result_widget.set_stale(stale)
         self.diagram_widget.set_stale(stale)
+        self._update_export_actions()
+        self._update_confirm_state(stale)
+
+    def _update_export_actions(self) -> None:
+        for action in self.export_actions.values():
+            action.setEnabled(self.result is not None)
+
+    def _update_confirm_state(self, stale: bool) -> None:
+        r = self.result
+        if r is None:
+            self.result_widget.set_confirm_state(False, "")
+        elif r.is_confirmed:
+            when = r.confirmed_at.astimezone().strftime("%d/%m/%Y %H:%M")  # type: ignore[union-attr]
+            self.result_widget.set_confirm_state(False, f"✔ Plan confirmado el {when}.")
+        elif r.id is None:
+            self.result_widget.set_confirm_state(
+                False, "Guarde el proyecto y optimice de nuevo para poder confirmar el plan."
+            )
+        elif stale:
+            self.result_widget.set_confirm_state(
+                False, "Optimice de nuevo: el resultado está desactualizado."
+            )
+        else:
+            self.result_widget.set_confirm_state(True, self._usage_text(r))
+
+    @staticmethod
+    def _usage_text(result: OptimizationResult) -> str:
+        plates = sum(result.stock_plates_used().values())
+        offcuts = len(result.stock_offcuts_used())
+        if not plates and not offcuts:
+            return "El plan solo usa placas nuevas (no descuenta stock)."
+        return (
+            f"Al confirmar se descuentan {plates} placa{'' if plates == 1 else 's'} del "
+            f"inventario y {offcuts} retazo{'' if offcuts == 1 else 's'} del stock."
+        )
+
+    def _on_result_updated(self, result: OptimizationResult) -> None:
+        """El resultado guardado cambió (p. ej. retazos pasados a stock)."""
+        self.result = result
+        self.result_widget.set_result(result, keep_stale=True)
+        self.update_stale()
+
+    def _on_stock_changed(self) -> None:
+        self.plate_widget.reload(load_form=True)
+
+    # ------------------------------------------------------------------ inventario
+    def open_inventory(self) -> InventoryDialog:
+        dialog = InventoryDialog(self.services.plates, self.services.inventory, self.units, self)
+        dialog.finished.connect(lambda _code: self._on_stock_changed())
+        dialog.open()
+        return dialog
+
+    def show_offcuts(self) -> None:
+        self.offcuts_widget.refresh_stock()
+        self.bottom_tabs.setCurrentIndex(self.offcuts_tab)
+
+    def confirm_plan(self, *, confirm: bool = True) -> bool:
+        """Descuenta del stock lo que usa el resultado mostrado (una sola vez)."""
+        r = self.result
+        if r is None or r.id is None or r.is_confirmed or self.result_is_stale:
+            return False
+        if confirm:
+            answer = QMessageBox.question(
+                self,
+                "Confirmar plan de corte",
+                f"{self._usage_text(r)}\n\n¿Confirmar el plan? No se puede deshacer.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
+        try:
+            confirmed = self.services.inventory.confirm_result(r.id)
+        except ConfirmationError as exc:
+            QMessageBox.warning(self, "No se pudo confirmar", str(exc))
+            return False
+        self._on_result_updated(confirmed)
+        self.offcuts_widget.set_result(confirmed)
+        self.offcuts_widget.refresh_stock()
+        self._on_stock_changed()
+        self.status_message.setText("Plan confirmado: stock actualizado")
+        return True
+
+    # ------------------------------------------------------------------ exportación
+    def export(self, exporter_id: str, path: str | Path | None = None) -> list[Path]:
+        """Exporta el resultado mostrado. Sin ``path`` pregunta dónde guardarlo."""
+        if self.result is None:
+            return []
+        if path is None:
+            if self.result_is_stale:
+                answer = QMessageBox.question(
+                    self,
+                    "Resultado desactualizado",
+                    "Los datos del proyecto cambiaron desde el cálculo. ¿Exportar igualmente?",
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return []
+            exporter = self.services.reports
+            folder = str(self.settings.value(KEY_EXPORT_DIR, str(Path.home())))
+            name = exporter.default_filename(self.project, exporter_id)
+            selected = next(e for e in exporter.exporters() if e.id == exporter_id)
+            chosen, _filter = QFileDialog.getSaveFileName(
+                self, "Exportar", str(Path(folder) / name), selected.file_filter
+            )
+            if not chosen:
+                return []
+            path = Path(chosen)
+            if not path.suffix:
+                path = path.with_suffix(selected.suffix)
+            self.settings.setValue(KEY_EXPORT_DIR, str(path.parent))
+        try:
+            written = self.services.reports.export(
+                exporter_id, self.project, self.result, path, unit=self.units.unit
+            )
+        except OSError as exc:
+            QMessageBox.warning(self, "No se pudo exportar", str(exc))
+            return []
+        names = ", ".join(p.name for p in written)
+        self.status_message.setText(f"Exportado: {names}")
+        return written
 
     def focus_issue(self, issue: ValidationIssue) -> None:
         """Lleva al usuario al campo señalado por un mensaje de validación."""

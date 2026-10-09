@@ -6,10 +6,20 @@ from collections.abc import Iterable
 from dataclasses import replace
 
 from database.database import Database
-from database.repositories import OffcutRepository, ResultRepository, StockRepository
+from database.repositories import (
+    OffcutRepository,
+    ResultRepository,
+    StockRepository,
+    utc_now,
+)
 from models.placa import StockPlate
+from models.resultado import OptimizationResult
 from models.retazo import Offcut, OffcutStatus
 from utils.units import format_length
+
+
+class ConfirmationError(ValueError):
+    """El plan no se puede confirmar (ya confirmado, sin stock, retazo no disponible…)."""
 
 
 class InventoryService:
@@ -92,3 +102,38 @@ class InventoryService:
 
     def delete_offcut(self, offcut_id: int) -> None:
         self.offcuts.delete(offcut_id)
+
+    # -- confirmación de un plan
+    def confirm_result(self, result_id: int) -> OptimizationResult:
+        """Confirma un plan de corte: descuenta las placas de inventario usadas y marca
+        como consumidos los retazos del stock usados. Todo o nada (una transacción).
+
+        Lanza ``ConfirmationError`` si ya estaba confirmado, si no alcanza el stock o si un
+        retazo ya no está disponible.
+        """
+        result = self.results.get(result_id)
+        if result.is_confirmed:
+            raise ConfirmationError("Este plan de corte ya fue confirmado")
+        with self.db.transaction():
+            for plate_format_id, quantity in result.stock_plates_used().items():
+                available = self.stock.get_quantity(plate_format_id)
+                if quantity > available:
+                    raise ConfirmationError(
+                        f"El plan usa {quantity} placas del inventario y solo quedan "
+                        f"{available}. Vuelva a optimizar."
+                    )
+                self.stock.set_quantity(plate_format_id, available - quantity)
+            for offcut_id in result.stock_offcuts_used():
+                try:
+                    offcut = self.offcuts.get(offcut_id)
+                except LookupError:
+                    offcut = None
+                if offcut is None or offcut.status is not OffcutStatus.IN_STOCK:
+                    raise ConfirmationError(
+                        f"El retazo {offcut_id} del stock ya no está disponible. "
+                        "Vuelva a optimizar."
+                    )
+                self.offcuts.set_status(offcut_id, OffcutStatus.CONSUMED)
+            confirmed = replace(result, confirmed_at=utc_now())
+            self.results.update(confirmed)
+        return confirmed

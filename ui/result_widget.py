@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHeaderView,
     QLabel,
+    QPushButton,
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
@@ -91,6 +92,7 @@ class ResultWidget(QScrollArea):
     """Resumen del resultado. Clic en una fila de la tabla → ``sheet_activated(índice)``."""
 
     sheet_activated = Signal(int)
+    confirm_requested = Signal()
 
     def __init__(self, units: UnitsDisplay, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -161,6 +163,17 @@ class ResultWidget(QScrollArea):
         layout.addWidget(self.details_label)
         layout.addWidget(self.sheets_title)
         layout.addWidget(self.sheet_table, 1)
+        self.confirm_button = QPushButton("Confirmar y descontar stock")
+        self.confirm_button.setToolTip(
+            "Descuenta del inventario las placas usadas y marca como consumidos los retazos "
+            "del stock que usa este plan"
+        )
+        self.confirm_button.clicked.connect(self.confirm_requested)
+        self._confirm_state: tuple[bool, str] = (False, "")
+        self.confirm_label = QLabel()
+        self.confirm_label.setWordWrap(True)
+        layout.addWidget(self.confirm_button)
+        layout.addWidget(self.confirm_label)
         self.setWidget(body)
 
         units.unit_changed.connect(lambda _unit: self.set_result(self.result, keep_stale=True))
@@ -178,6 +191,7 @@ class ResultWidget(QScrollArea):
         self.message_label.setText(EMPTY_MESSAGE)
         self.unplaced_banner.hide()
         self.sheet_table.setRowCount(0)
+        self.set_confirm_state(*self._confirm_state)
         if result is None:
             return
 
@@ -219,6 +233,15 @@ class ResultWidget(QScrollArea):
         """Muestra un mensaje en lugar del resultado (errores, cancelación…)."""
         self.set_result(None)
         self.message_label.setText(html)
+
+    def set_confirm_state(self, enabled: bool, text: str) -> None:
+        """Habilita «Confirmar» y muestra el estado de confirmación del plan."""
+        self._confirm_state = (enabled, text)
+        has = self.result is not None
+        self.confirm_button.setVisible(has)
+        self.confirm_button.setEnabled(has and enabled)
+        self.confirm_label.setVisible(has and bool(text))
+        self.confirm_label.setText(text)
 
     def set_stale(self, stale: bool) -> None:
         self.stale_banner.setVisible(stale and self.result is not None)

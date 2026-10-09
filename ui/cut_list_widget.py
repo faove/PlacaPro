@@ -223,7 +223,7 @@ class SequenceModel(_ResultTableModel):
                 SequenceColumn.ORIENTATION: c.orientation.value,
                 SequenceColumn.FENCE: c.fence_distance,
                 SequenceColumn.LENGTH: c.length,
-                SequenceColumn.RESULTING: ", ".join(c.resulting),
+                SequenceColumn.RESULTING: ", ".join(c.resulting_labels(self.units.unit)),
             }[col]
         if role == Qt.ItemDataRole.DisplayRole:
             return {
@@ -233,7 +233,7 @@ class SequenceModel(_ResultTableModel):
                 SequenceColumn.ORIENTATION: ORIENTATION_LABELS[c.orientation],
                 SequenceColumn.FENCE: self.units.format(c.fence_distance),
                 SequenceColumn.LENGTH: self.units.format(c.length),
-                SequenceColumn.RESULTING: ", ".join(c.resulting),
+                SequenceColumn.RESULTING: ", ".join(c.resulting_labels(self.units.unit)),
             }[col]
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (
             SequenceColumn.FENCE,

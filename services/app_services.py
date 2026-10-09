@@ -9,6 +9,7 @@ from services.inventory_service import InventoryService
 from services.optimization_service import OptimizationService
 from services.plate_service import PlateService
 from services.project_service import ProjectService
+from services.report_service import ReportService
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class AppServices:
     plates: PlateService
     inventory: InventoryService
     optimization: OptimizationService
+    reports: ReportService
 
     @classmethod
     def from_db(cls, db: Database) -> AppServices:
@@ -27,4 +29,5 @@ class AppServices:
             plates=PlateService(db),
             inventory=InventoryService(db),
             optimization=OptimizationService(db),
+            reports=ReportService(db),
         )

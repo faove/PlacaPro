@@ -37,7 +37,8 @@ Splitters redimensionables; estado de la ventana guardado con `QSettings`.
 | Resultado | `result_widget.py` | Tarjetas KPI + tabla por placa (%, usado, desperdicio) |
 | Lista de cortes | `cut_list_widget.py` | Nº, Pieza, Ancho, Alto, Placa, X, Y, Rotación; ordenable; clic ⇒ resalta en el diagrama |
 | Secuencia | `cut_list_widget.py` (tab) | CORTE n, nivel, orientación, medida, longitud |
-| Retazos | `offcuts_widget.py` | Retazos del resultado + botón "Guardar en stock"; vista de retazos disponibles |
+| Retazos | `offcuts_widget.py` | Pestaña inferior: retazos del resultado + "Guardar en stock"; retazos disponibles (filtro material/espesor, marcar consumido, eliminar) |
+| Confirmar plan | `result_widget.py` | Botón "Confirmar y descontar stock": descuenta placas del inventario y consume retazos usados (una vez, en una transacción) |
 | Inventario | `inventory_widget.py` | Diálogo: formatos y cantidad disponible |
 
 ## 3. Diagrama de placa (QGraphicsScene)

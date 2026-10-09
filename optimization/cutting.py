@@ -24,7 +24,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 from models.parametros import CutMode, CuttingParameters
-from models.plan_corte import Cut, CutOrientation, CutPlan, PieceContour
+from models.plan_corte import Cut, CutOrientation, CutPlan, PartKind, PieceContour, ReleasedPart
 from models.resultado import OptimizationResult, SheetLayout
 from models.retazo import Offcut, OffcutStatus
 from optimization.guillotine import GNode, decompose
@@ -281,21 +281,21 @@ class CuttingPlanner:
         k = self.params.kerf
         by_rect = {Rect(o.x, o.y, o.width, o.height): o for o in offcuts}  # type: ignore[arg-type]
 
-        def describe(node: CutNode, o: CutOrientation) -> str | None:
+        def describe(node: CutNode) -> ReleasedPart | None:
             r = node.region
-            size = f"{format_length(r.w)} × {format_length(r.h)}"
             if node.kind is NodeKind.PIECE:
-                return f"{sheet.placements[node.ref].piece.label} ({size})"  # type: ignore[index]
+                label = sheet.placements[node.ref].piece.label  # type: ignore[index]
+                return ReleasedPart(PartKind.PIECE, label, r.w, r.h)
             if node.kind is NodeKind.EDGE:
-                return "Refilado"
+                return ReleasedPart(PartKind.TRIM, "Refilado", r.w, r.h)
             if node.kind is NodeKind.OFFCUT:
                 off = by_rect[r]
                 if off.status is OffcutStatus.REUSABLE:
-                    return f"Retazo {off.label} ({size})"
-                return f"Desperdicio ({size})"
+                    return ReleasedPart(PartKind.OFFCUT, off.label, r.w, r.h)
+                return ReleasedPart(PartKind.WASTE, "", r.w, r.h)
             if node.label == "Placa":  # el refilado no «libera» la placa
                 return None
-            return f"{node.label} ({format_length(r.w if o is V else r.h)} mm)"
+            return ReleasedPart(PartKind.STRIP, node.label, r.w, r.h)
 
         nodes: list[CutNode] = []
         queue = deque([tree.root] if tree.root.kind is NodeKind.CUT else [])
@@ -316,12 +316,12 @@ class CuttingPlanner:
             for i, p in enumerate(node.positions):
                 # Cada corte libera la franja anterior; el último, también la siguiente.
                 hi = end if i == last else p
-                released = [
-                    text
+                released = tuple(
+                    part
                     for c in node.children
                     if lo <= _span(c.region, o)[0] and _span(c.region, o)[1] <= hi
-                    if (text := describe(c, o)) is not None
-                ]
+                    if (part := describe(c)) is not None
+                )
                 cuts.append(
                     Cut(
                         order=len(cuts) + 1,
@@ -332,9 +332,10 @@ class CuttingPlanner:
                         length=length,
                         fence_distance=max(p - lo, 0),
                         is_trim=node.level == 0,
-                        resulting=tuple(released),
+                        resulting=tuple(p.describe(o) for p in released),
                         kerf=max(0, min(p + k, end) - max(p, lo)),
                         region=node.label,
+                        parts=released,
                     )
                 )
                 lo = p + k

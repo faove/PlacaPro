@@ -197,6 +197,8 @@ class OptimizationResult:
     duration_ms: int = 0
     project_id: int | None = None
     created_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    """Momento en que se confirmó el plan (stock descontado, retazos consumidos)."""
     input_fingerprint: str = ""
     """Huella de los datos de entrada (placa, parámetros, despiece); permite saber si el
     resultado guardado sigue correspondiendo al proyecto. Ver ``OptimizationService``."""
@@ -238,6 +240,26 @@ class OptimizationResult:
     def is_complete(self) -> bool:
         return not self.unplaced
 
+    @property
+    def is_confirmed(self) -> bool:
+        return self.confirmed_at is not None
+
+    def stock_plates_used(self) -> dict[int, int]:
+        """Placas del inventario usadas, por formato."""
+        used: dict[int, int] = {}
+        for s in self.sheets:
+            if s.source is SheetSource.STOCK and s.plate_format_id is not None:
+                used[s.plate_format_id] = used.get(s.plate_format_id, 0) + 1
+        return used
+
+    def stock_offcuts_used(self) -> list[int]:
+        """Ids de los retazos del stock usados como placa."""
+        return [
+            s.source_offcut_id
+            for s in self.sheets
+            if s.source is SheetSource.OFFCUT and s.source_offcut_id is not None
+        ]
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -251,6 +273,7 @@ class OptimizationResult:
             "lower_bound": self.lower_bound,
             "duration_ms": self.duration_ms,
             "input_fingerprint": self.input_fingerprint,
+            "confirmed_at": dt_to_str(self.confirmed_at),
         }
 
     @classmethod
@@ -266,5 +289,6 @@ class OptimizationResult:
             project_id=data.get("project_id"),
             created_at=dt_from_str(data.get("created_at")),
             input_fingerprint=data.get("input_fingerprint", ""),
+            confirmed_at=dt_from_str(data.get("confirmed_at")),
             id=data.get("id"),
         )

@@ -65,6 +65,7 @@ from utils.units import INTERNAL_PER_MM
 
 LABEL_FONT_PX = 11
 LABEL_PADDING_PX = 3
+HATCH_SPACING_PX = 8
 DIMENSION_OFFSET = 120 * INTERNAL_PER_MM
 """Distancia de las cotas al borde de la placa (unidades de escena)."""
 ZOOM_STEP = 1.15
@@ -270,14 +271,20 @@ class OffcutItem(QGraphicsRectItem):
         painter.setPen(self.pen())
         painter.drawRect(rect)
         if self.reusable:
-            # Rayado diagonal en espaciado de pantalla (igual con cualquier zoom).
+            # Rayado diagonal en espaciado de pantalla (igual con cualquier zoom y en el
+            # PDF; los patrones de QBrush dependen de la resolución del dispositivo).
             painter.save()
             device = painter.worldTransform().mapRect(rect)
             painter.resetTransform()
-            hatch = QBrush(self.fill.darker(130), Qt.BrushStyle.BDiagPattern)
-            painter.setBrush(hatch)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRect(device)
+            painter.setClipRect(device, Qt.ClipOperation.IntersectClip)
+            painter.setPen(QPen(self.fill.darker(125), 1))
+            # Líneas a 45° desde el borde inferior; empiezan a la izquierda del rectángulo
+            # para cubrir también la esquina superior izquierda.
+            offset = -device.height()
+            while offset < device.width():
+                start = QPointF(device.left() + offset, device.bottom())
+                painter.drawLine(start, start + QPointF(device.height(), -device.height()))
+                offset += HATCH_SPACING_PX
             painter.restore()
             draw_screen_text(painter, rect, self.lines(), QColor("#1B5E20"))
 
